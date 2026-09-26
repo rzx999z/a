@@ -17,6 +17,19 @@
   --font-px:"Press Start 2P",monospace;--font-body:Consolas,"Lucida Console",monospace;
   --base:13px;--sidebar-w:220px;--chat-h:140px;
 }
+/* tema dark */
+html[data-theme="dark"]{
+  --bg:#0b0b0f;--bg2:#121218;--panel:#16161f;--panel2:#1c1c28;
+  --border:#2a2a3d;--purple:#6b5cff;--bright:#8b7cff;--neon:#a99bff;
+  --fg:#e8e6f0;--dim:#7a7890;--sink:#0b0b0f;
+}
+/* tema light */
+html[data-theme="light"]{
+  --bg:#f4f0fa;--bg2:#ebe4f5;--panel:#fff;--panel2:#f8f5fc;
+  --border:#c9b8e8;--purple:#6d28d9;--bright:#7c3aed;--neon:#5b21b6;
+  --fg:#1a1028;--dim:#6b5b8a;--sink:#efe8f8;--ink:#1a1028;--shadow:#c9b8e8;
+  --ok:#16a34a;--warn:#d97706;--danger:#dc2626;
+}
 html,body{height:100%;margin:0}
 body{color:var(--fg);font-family:var(--font-body);font-size:var(--base);background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
 button{font-family:inherit}
@@ -24,8 +37,10 @@ h1,h2,h3{font-family:var(--font-px);font-weight:400;text-transform:uppercase;lin
 input,textarea{background:var(--sink);border:2px solid var(--border);color:var(--fg);padding:8px 10px;font-family:var(--font-body);font-size:12px;outline:none}
 input:focus,textarea:focus{border-color:var(--bright)}
 ::placeholder{color:#5c4a86}
+html[data-theme="light"] ::placeholder{color:#9a8bb8}
 .topbar{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:2px solid var(--border);background:var(--bg2);flex-shrink:0;height:52px}
 .brand{display:flex;align-items:center;gap:8px;font-family:var(--font-px);font-size:14px;color:#fff;text-shadow:2px 2px 0 var(--purple);cursor:pointer;user-select:none}
+html[data-theme="light"] .brand{color:var(--fg);text-shadow:2px 2px 0 var(--border)}
 .brand svg{display:block}
 .topbar-center{flex:1;display:flex;align-items:center;justify-content:center;gap:14px;min-width:0}
 .room-id{font-family:var(--font-px);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:8px}
@@ -57,6 +72,7 @@ input:focus,textarea:focus{border-color:var(--bright)}
 #viewRoom{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .hero{text-align:center;padding:36px 16px 20px}
 .hero h1{font-size:18px;color:#fff;text-shadow:3px 3px 0 var(--purple),6px 6px 0 var(--shadow)}
+html[data-theme="light"] .hero h1{color:var(--fg);text-shadow:2px 2px 0 var(--border)}
 .hero p{color:var(--dim);font-family:var(--font-px);font-size:9px;margin:10px 0 0}
 .cards{display:flex;flex-wrap:wrap;gap:22px;justify-content:center;padding:20px 16px 60px}
 .card{background:var(--panel2);border:2px solid var(--border);box-shadow:5px 5px 0 var(--shadow);padding:22px;width:min(360px,92vw);display:flex;flex-direction:column;gap:10px;position:relative}
@@ -357,7 +373,7 @@ input:focus,textarea:focus{border-color:var(--bright)}
 <div class="toast" id="toastEl" hidden></div>
 
 <script type="module">
-// Import principal do Trystero usando esm.sh que funcionou antes
+// Import principal do Trystero
 import {joinRoom} from 'https://esm.sh/trystero@0.21.6/nostr';
 
 const $ = id => document.getElementById(id);
@@ -380,15 +396,17 @@ const NOSTR_RELAYS = [
   'wss://relay.primal.net'
 ];
 
+// FIX: iceTransportPolicy all — permite STUN direto + TURN como fallback
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
   ],
-  iceTransportPolicy: 'relay',
+  iceTransportPolicy: 'all',
   bundlePolicy: 'max-bundle',
   rtcpMuxPolicy: 'require'
 };
@@ -396,7 +414,7 @@ const RTC_CONFIG = {
 let room = null;
 let roomCode = null, roomPass = '', myName = '', isHost = false;
 let myStream = null, audioTrack = null, camTrack = null, screenTrack = null, placeholderTrack = null;
-let pttPressed = false, micMuted = false, noiseSuppression = true;
+let pttPressed = false, micOpen = false, noiseSuppression = true; // FIX: micOpen (não só visual)
 let streamActive = false;
 let activeSource = null;
 let currentRes = 720, currentFps = 30, currentBitrate = 'auto';
@@ -405,7 +423,7 @@ let statsInterval = null;
 let lastBytesSent = 0, lastBytesTs = 0;
 const participants = new Map();
 const chatHistory = [];
-const peerConns = new Map();
+const peerConns = new Map(); // preenchido via getPeerConnection quando disponível
 let sendProfile, getProfile, sendChat, getChat, sendPingAct, getPingAct, sendPongAct, getPongAct, sendKick, getKick;
 
 const THEMES = ['purple','dark','light'];
@@ -429,7 +447,7 @@ function tone(freq, dur, type='square', vol=0.035){
   g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + dur);
   o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + dur + 0.02);
 }
-const SFX = { click: () => tone(620, 0.06, 'square', 0.03), ok: () => tone(880, 0.09, 'square', 0.035, 1200), err: () => tone(165, 0.18, 'sawtooth', 0.045), msg: () => tone(780, 0.05, 'square', 0.03) };
+const SFX = { click: () => tone(620, 0.06, 'square', 0.03), ok: () => tone(880, 0.09, 'square', 0.035), err: () => tone(165, 0.18, 'sawtooth', 0.045), msg: () => tone(780, 0.05, 'square', 0.03) };
 
 function genCode(){ let s=''; for(let i=0;i<4;i++) s += CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)]; return s; }
 
@@ -443,28 +461,23 @@ function toast(msg, ms=2400){
 }
 
 // ============================================================
-// URL MANAGEMENT — atualiza a barra de endereço sem reload
+// URL MANAGEMENT
 // ============================================================
 function buildRoomUrl(){
-  // URL canônica: SEMPRE com ?sala=XXXX
   const base = location.origin + location.pathname;
   return base + '?sala=' + encodeURIComponent(roomCode);
 }
 function setUrlRoom(code){
   const url = location.origin + location.pathname + '?sala=' + encodeURIComponent(code);
-  console.log('[DFIR] setUrlRoom →', url);
   try {
     history.replaceState({ sala: code }, '', url);
   } catch(e){
-    console.warn('[DFIR] replaceState falhou, tentando hash fallback:', e);
     location.hash = '#sala=' + code;
   }
-  // Atualiza também o display interno da URL
   updateUrlStrip();
 }
 function clearUrl(){
   const url = location.origin + location.pathname;
-  console.log('[DFIR] clearUrl →', url);
   try {
     history.replaceState({}, '', url);
   } catch(e){
@@ -476,7 +489,6 @@ function updateUrlStrip(){
   if(el) el.textContent = location.href;
 }
 function readUrlParams(){
-  // Aceita tanto ?sala=XXXX quanto #sala=XXXX
   const search = new URLSearchParams(location.search);
   let code = search.get('sala');
   let pass = search.get('pass') || '';
@@ -488,7 +500,6 @@ function readUrlParams(){
   }
   return { code, pass };
 }
-// ============================================================
 
 function escapeHtml(s){ return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
 
@@ -516,11 +527,16 @@ async function initMedia(){
   if(navigator.mediaDevices?.getUserMedia){
     try {
       const s = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: noiseSuppression,
+          autoGainControl: true
+        },
         video: false
       });
       audioTrack = s.getAudioTracks()[0];
-      audioTrack.enabled = true;
+      // FIX: começa mudo; só libera no PTT ou quando micOpen=true
+      audioTrack.enabled = false;
       audioTrack.contentHint = 'speech';
       myStream.addTrack(audioTrack);
     } catch(e){ console.warn('sem mic:', e.message); }
@@ -528,38 +544,70 @@ async function initMedia(){
   placeholderTrack = makePlaceholder();
   if(placeholderTrack) myStream.addTrack(placeholderTrack);
   updatePttAvailability();
+  updateMicUi();
 }
 
 function updatePttAvailability(){
   const btn = $('pttBtn'), lbl = $('pttLabel');
   if(!audioTrack){ btn.classList.add('noaudio'); lbl.textContent = 'SEM MIC'; }
-  else { btn.classList.remove('noaudio'); lbl.textContent = 'PRONTO'; }
+  else { btn.classList.remove('noaudio'); lbl.textContent = micOpen ? 'ABERTO' : 'PRONTO'; }
 }
 
+function updateMicUi(){
+  const btn = $('micBtn');
+  if(!btn) return;
+  btn.classList.toggle('on', micOpen);
+  $('micVal').textContent = micOpen ? 'ABERTO' : 'FECHADO';
+  if(audioTrack && !pttPressed){
+    audioTrack.enabled = micOpen;
+  }
+  updatePttAvailability();
+}
+
+// FIX: aplica qualidade em todos os senders via room.getPeers / peer connection quando possível
 async function applyQualityToSender(){
   if(!streamActive) return;
   const key = currentRes + '-' + currentFps;
   const bitrate = currentBitrate === 'auto' ? BITRATES[key] : parseInt(currentBitrate, 10);
+
+  // tenta peerConns primeiro
+  const pcs = [...peerConns.values()];
+  // fallback: se Trystero expõe getPeers
+  if(pcs.length === 0 && room && typeof room.getPeers === 'function'){
+    try {
+      const peers = room.getPeers();
+      for(const [id, pc] of Object.entries(peers || {})){
+        if(pc && typeof pc.getSenders === 'function') peerConns.set(id, pc);
+      }
+    } catch {}
+  }
+
   for(const pc of peerConns.values()){
-    const senders = pc.getSenders();
-    const vs = senders.find(s => s.track && s.track.kind === 'video');
-    if(vs){
-      try {
+    try {
+      const senders = pc.getSenders();
+      const vs = senders.find(s => s.track && s.track.kind === 'video');
+      if(vs){
         const params = vs.getParameters();
         if(!params.encodings || !params.encodings.length) params.encodings = [{}];
         params.encodings[0].maxBitrate = bitrate;
         params.encodings[0].maxFramerate = currentFps;
         params.degradationPreference = 'maintain-resolution';
         await vs.setParameters(params);
-      } catch(e){ console.warn('setParameters:', e); }
-    }
+      }
+    } catch(e){ console.warn('setParameters:', e); }
   }
+
   const targetW = currentRes === 480 ? 854 : currentRes === 720 ? 1280 : 1920;
   const targetH = currentRes === 480 ? 480 : currentRes === 720 ? 720 : 1080;
   const t = screenTrack || camTrack;
   if(t){
-    try { await t.applyConstraints({ width:{ideal:targetW}, height:{ideal:targetH}, frameRate:{ideal:currentFps, max:currentFps} }); }
-    catch(e){ console.warn('applyConstraints:', e); }
+    try {
+      await t.applyConstraints({
+        width: { ideal: targetW },
+        height: { ideal: targetH },
+        frameRate: { ideal: currentFps, max: currentFps }
+      });
+    } catch(e){ console.warn('applyConstraints:', e); }
   }
   $('qRes').textContent = currentRes + 'p';
   $('qFps').textContent = currentFps + 'fps';
@@ -568,11 +616,15 @@ async function applyQualityToSender(){
 
 function captureConstraints(){
   const h = currentRes === 480 ? 480 : currentRes === 720 ? 720 : 1080;
-  return { width:{ideal: h === 480 ? 854 : h === 720 ? 1280 : 1920}, height:{ideal:h}, frameRate:{ideal:currentFps, max:currentFps} };
+  return {
+    width: { ideal: h === 480 ? 854 : h === 720 ? 1280 : 1920 },
+    height: { ideal: h },
+    frameRate: { ideal: currentFps, max: currentFps }
+  };
 }
 
 // ============================================================
-// CRIAR / ENTRAR — URL muda imediatamente
+// CRIAR / ENTRAR
 // ============================================================
 async function startHost(){
   myName = $('createName').value.trim();
@@ -581,7 +633,6 @@ async function startHost(){
   $('createErr').textContent = '';
   put(K.name, myName);
   roomCode = genCode(); isHost = true;
-  // ⚡ Atualiza URL IMEDIATAMENTE
   setUrlRoom(roomCode);
   await initMedia();
   showCreatedModal();
@@ -620,6 +671,7 @@ async function autoJoinFromLink(code, pass) {
 
 function connectToRoom(){
   if(room){ try{ room.leave(); }catch{} room = null; }
+  peerConns.clear();
   setConn('warn', 'conectando…');
 
   try {
@@ -647,7 +699,17 @@ function connectToRoom(){
     participants.set(peerId, { name:'…', volume:1 });
     renderCallList();
     setConn('on', 'conectado (' + (participants.size + 1) + ')');
-    sendProfile({ name: myName, pass: roomPass, isHost, streaming: streamActive, source: activeSource }, peerId);
+
+    // tenta capturar RTCPeerConnection do Trystero
+    try {
+      if(typeof room.getPeers === 'function'){
+        const peers = room.getPeers();
+        if(peers && peers[peerId]) peerConns.set(peerId, peers[peerId]);
+      }
+    } catch {}
+
+    // NÃO envia senha no profile
+    sendProfile({ name: myName, isHost, streaming: streamActive, source: activeSource, talking: pttPressed || micOpen }, peerId);
     if(myStream){ try{ room.addStream(myStream, peerId); }catch(e){ console.warn(e); } }
     setTimeout(applyQualityToSender, 800);
   });
@@ -666,16 +728,31 @@ function connectToRoom(){
 
   room.onPeerStream((stream, peerId) => {
     attachStream(peerId, stream);
+    // tenta pegar PC de novo quando stream chega
+    try {
+      if(typeof room.getPeers === 'function'){
+        const peers = room.getPeers();
+        if(peers && peers[peerId]) peerConns.set(peerId, peers[peerId]);
+      }
+    } catch {}
   });
 
   getProfile((data, peerId) => {
     if(!data) return;
-    if(isHost && roomPass && data.pass !== roomPass){
-      sendKick({ reason:'senha incorreta' }, peerId); return;
-    }
+    // validação de senha só no joinRoom (Trystero password).
+    // se host quiser kick manual, usa sendKick.
     const ex = participants.get(peerId) || {};
-    participants.set(peerId, { ...ex, name: data.name || ex.name, isHost: !!data.isHost, streaming: !!data.streaming, source: data.source || null });
-    if(isHost) sendProfile({ name: myName, pass: roomPass, isHost, streaming: streamActive, source: activeSource }, peerId);
+    participants.set(peerId, {
+      ...ex,
+      name: data.name || ex.name,
+      isHost: !!data.isHost,
+      streaming: !!data.streaming,
+      source: data.source || null,
+      talking: !!data.talking
+    });
+    if(isHost){
+      sendProfile({ name: myName, isHost, streaming: streamActive, source: activeSource, talking: pttPressed || micOpen }, peerId);
+    }
     renderCallList();
     setConn('on', 'conectado (' + (participants.size + 1) + ')');
   });
@@ -712,12 +789,23 @@ function startStats(){
   if(statsInterval) clearInterval(statsInterval);
   statsInterval = setInterval(async () => {
     if(!room || participants.size === 0) return;
+
+    // tenta refrescar peerConns
+    if(peerConns.size === 0 && room && typeof room.getPeers === 'function'){
+      try {
+        const peers = room.getPeers();
+        for(const [id, pc] of Object.entries(peers || {})){
+          if(pc && typeof pc.getSenders === 'function') peerConns.set(id, pc);
+        }
+      } catch {}
+    }
+
     let totalBitrate = 0, count = 0;
     for(const pc of peerConns.values()){
       try {
         const stats = await pc.getStats();
         stats.forEach(r => {
-          if(r.type === 'outbound-rtp' && r.kind === 'video' && r.bytesSent){
+          if(r.type === 'outbound-rtp' && r.kind === 'video' && r.bytesSent != null){
             const now = performance.now();
             if(lastBytesTs > 0 && lastBytesSent > 0){
               const db = r.bytesSent - lastBytesSent;
@@ -763,6 +851,10 @@ function leaveRoom(){
   if(myStream) myStream.getTracks().forEach(t => t.stop());
   if(timerInterval) clearInterval(timerInterval);
   if(statsInterval) clearInterval(statsInterval);
+  if(window.__pingInt) clearInterval(window.__pingInt);
+  peerConns.clear();
+  participants.clear();
+  chatHistory.length = 0;
   clearUrl();
   location.reload();
 }
@@ -771,7 +863,14 @@ function renderCallList(){
   const list = $('callList'); if(!list) return;
   list.innerHTML = '';
   const all = new Map();
-  all.set(SELF, { name: myName || 'eu', self:true, streaming: streamActive, source: activeSource, talking: pttPressed, volume: 1 });
+  all.set(SELF, {
+    name: myName || 'eu',
+    self: true,
+    streaming: streamActive,
+    source: activeSource,
+    talking: pttPressed || micOpen,
+    volume: 1
+  });
   for(const [id,p] of participants) all.set(id, p);
   $('callCount').textContent = String(all.size);
   for(const [id,p] of all){
@@ -811,7 +910,7 @@ function renderCallList(){
       if(id !== SELF){
         const pc = participants.get(id);
         if(pc) pc.volume = v;
-        document.querySelectorAll(`[data-video-peer="${CSS.escape(id)}"] video`).forEach(vid => vid.volume = v);
+        document.querySelectorAll(`[data-video-peer="${CSS.escape(id)}"] video`).forEach(vid => { vid.volume = v; });
       }
     });
     list.appendChild(el);
@@ -944,6 +1043,7 @@ async function toggleCamera(){
     await swapVideoTrack(camTrack);
     $('goLiveBtn').classList.add('on');
     $('goLiveBtn').innerHTML = '⏹ AO VIVO';
+    $('camBtn').classList.add('on');
     $('userChipStatus').textContent = 'AO VIVO';
     $('stageBreadcrumb').innerHTML = '<b>' + escapeHtml(myName || 'eu') + '</b> · Câmera · ' + currentRes + 'p' + currentFps;
     broadcastProfile();
@@ -964,15 +1064,25 @@ function stopCurrentStream(){
   $('goLiveBtn').innerHTML = '⏺ GO LIVE';
   $('camBtn').classList.remove('on');
   $('userChipStatus').textContent = 'NA CALL';
+  $('stageBreadcrumb').textContent = '— · sem transmissão';
   broadcastProfile();
   renderCallList();
 }
 
 function broadcastProfile(){
   if(!room || !sendProfile) return;
-  try { sendProfile({ name: myName, pass: roomPass, isHost, streaming: streamActive, source: activeSource }); } catch {}
+  try {
+    sendProfile({
+      name: myName,
+      isHost,
+      streaming: streamActive,
+      source: activeSource,
+      talking: pttPressed || micOpen
+    });
+  } catch {}
 }
 
+// FIX: PTT respeita micOpen
 function pttOn(){
   if(!audioTrack || pttPressed) return;
   pttPressed = true;
@@ -980,28 +1090,72 @@ function pttOn(){
   $('pttBtn').classList.add('talking');
   $('pttLabel').textContent = '🔴 FALANDO';
   $('pttLabel').classList.add('live');
-  if(sendProfile) sendProfile({ name: myName, pass: roomPass, isHost, streaming: streamActive, source: activeSource, talking:true });
+  broadcastProfile();
   renderCallList();
 }
 function pttOff(){
   if(!audioTrack || !pttPressed) return;
   pttPressed = false;
-  audioTrack.enabled = false;
+  // se mic está aberto, continua transmitindo; senão muda
+  audioTrack.enabled = micOpen;
   $('pttBtn').classList.remove('talking');
-  $('pttLabel').textContent = 'PRONTO';
+  $('pttLabel').textContent = micOpen ? 'ABERTO' : 'PRONTO';
   $('pttLabel').classList.remove('live');
-  if(sendProfile) sendProfile({ name: myName, pass: roomPass, isHost, streaming: streamActive, source: activeSource, talking:false });
+  broadcastProfile();
   renderCallList();
 }
+
+// FIX: toggleMic realmente controla o track
 function toggleMic(){
-  micMuted = !micMuted;
-  $('micBtn').classList.toggle('on', micMuted);
-  $('micVal').textContent = micMuted ? 'ABERTO' : 'FECHADO';
+  if(!audioTrack){ toast('sem microfone'); return; }
+  micOpen = !micOpen;
+  if(!pttPressed) audioTrack.enabled = micOpen;
+  updateMicUi();
+  broadcastProfile();
+  renderCallList();
 }
-function toggleNoise(){
+
+// FIX: reaplica noiseSuppression no track
+async function toggleNoise(){
   noiseSuppression = !noiseSuppression;
   $('noiseBtn').classList.toggle('on', noiseSuppression);
   $('noiseVal').textContent = noiseSuppression ? 'ON' : 'OFF';
+  if(audioTrack){
+    try {
+      await audioTrack.applyConstraints({
+        echoCancellation: true,
+        noiseSuppression: noiseSuppression,
+        autoGainControl: true
+      });
+    } catch(e){
+      // alguns browsers não permitem reaplicar; reinicia track se possível
+      console.warn('noise constraints:', e);
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: noiseSuppression,
+            autoGainControl: true
+          },
+          video: false
+        });
+        const newTrack = s.getAudioTracks()[0];
+        newTrack.enabled = audioTrack.enabled;
+        newTrack.contentHint = 'speech';
+        if(myStream){
+          myStream.removeTrack(audioTrack);
+          myStream.addTrack(newTrack);
+        }
+        audioTrack.stop();
+        audioTrack = newTrack;
+        if(room){
+          // força reenvio do stream com novo áudio
+          try{ room.removeStream(myStream); }catch{}
+          try{ room.addStream(myStream); }catch{}
+        }
+      } catch(e2){ console.warn('recriar mic:', e2); }
+    }
+  }
 }
 
 function addRoomMsg(from, payload){
@@ -1016,8 +1170,8 @@ function renderRoomMsgs(){
   for(const { from, msg } of chatHistory){
     const div = document.createElement('div'); div.className = 'cm';
     if(msg.sys){ div.classList.add('sys'); div.textContent = '* ' + msg.text; box.appendChild(div); continue; }
-    const p = from ? (participants.get(from) || { name:'?' }) : { name:'eu' };
-    const nm = document.createElement('b'); nm.textContent = (from ? '' : 'você ') + p.name;
+    const p = from ? (participants.get(from) || { name: (typeof from === 'string' && from.length < 20 ? from : '?') }) : { name:'eu' };
+    const nm = document.createElement('b'); nm.textContent = (from ? '' : 'você ') + (p.name || '?');
     const tx = document.createElement('span'); tx.textContent = msg.text;
     const ct = document.createElement('span'); ct.className = 'ct';
     ct.textContent = new Date(msg.at || Date.now()).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
@@ -1041,7 +1195,9 @@ function showCreatedModal(){
   else $('cPassRow').hidden = true;
   try {
     const canvas = $('qrCanvas');
-    QRCode.toCanvas(canvas, link, { width:160, margin:1, color:{ dark:'#0c0517', light:'#ffffff' } }, err => { if(err) console.warn(err); });
+    if(typeof QRCode !== 'undefined' && QRCode.toCanvas){
+      QRCode.toCanvas(canvas, link, { width:160, margin:1, color:{ dark:'#0c0517', light:'#ffffff' } }, err => { if(err) console.warn(err); });
+    }
   } catch(e){ console.warn(e); }
   $('createdModal').hidden = false;
 }
@@ -1169,7 +1325,6 @@ function boot(){
   const savedName = get(K.name, '');
   if(savedName){ $('createName').value = savedName; $('joinName').value = savedName; }
 
-  // --- AUTO JOIN VIA LINK ---
   const { code, pass } = readUrlParams();
   console.log('[DFIR] url params →', { code, pass });
   if(code && code.length === 4){
@@ -1201,6 +1356,7 @@ function boot(){
     toast('⟳ reconectando…');
     try { if(room) room.leave(); } catch {}
     room = null;
+    peerConns.clear();
     setTimeout(connectToRoom, 300);
   });
   $('roomCodeTop').addEventListener('click', () => { navigator.clipboard?.writeText(buildRoomUrl()); toast('link copiado'); });
