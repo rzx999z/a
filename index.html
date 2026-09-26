@@ -354,7 +354,7 @@ input:focus,textarea:focus{border-color:var(--bright)}
 import {joinRoom} from 'https://esm.sh/trystero@0.25.4/nostr';
 
 const $ = id => document.getElementById(id);
-const APP_ID = 'dfir-analise-final-v1'; // ID fixo para todos
+const APP_ID = 'dfir-analise-url-v1';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const K = { theme:'dfir-theme', name:'dfir-name' };
 const SELF = '__self__';
@@ -365,9 +365,6 @@ const BITRATES = {
   '1080-30': 5000000, '1080-60': 9000000
 };
 
-// ============================================================
-// MUDANÇA CRÍTICA 1: Lista de relays Nostr confiáveis
-// ============================================================
 const NOSTR_RELAYS = [
   'wss://relay.damus.io',
   'wss://nos.lol',
@@ -377,22 +374,16 @@ const NOSTR_RELAYS = [
   'wss://nostr.wine'
 ];
 
-// ============================================================
-// MUDANÇA CRÍTICA 2: Força o uso de TURN para garantir conexão
-// em qualquer rede (NAT restritivo, firewall, 4G, etc.)
-// ============================================================
+// STUN + TURN forçado para atravessar qualquer NAT
 const RTC_CONFIG = {
   iceServers: [
-    // STUN (descoberta de IP público)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    // TURN (relay para quando a conexão direta falha)
     { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
   ],
-  // FORÇA o uso do TURN, ignorando tentativas de conexão direta
   iceTransportPolicy: 'relay',
   bundlePolicy: 'max-bundle',
   rtcpMuxPolicy: 'require'
@@ -446,7 +437,25 @@ function toast(msg, ms=2400){
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, ms);
 }
-function roomUrl(){ return location.origin + location.pathname + '?sala=' + roomCode; }
+
+// URL helpers ------------------------------------------------
+function roomUrl(){
+  // URL canônica, com apenas ?sala=CODE (sem senha no link público)
+  return location.origin + location.pathname + '?sala=' + roomCode;
+}
+function setUrlRoom(code){
+  try {
+    const url = location.origin + location.pathname + '?sala=' + code;
+    history.replaceState({ sala: code }, '', url);
+  } catch(e){ console.warn('replaceState:', e); }
+}
+function clearUrl(){
+  try {
+    history.replaceState({}, '', location.origin + location.pathname);
+  } catch(e){ console.warn('replaceState:', e); }
+}
+// ------------------------------------------------------------
+
 function escapeHtml(s){ return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
 
 function setConn(state, text){
@@ -528,6 +537,7 @@ function captureConstraints(){
   return { width:{ideal: h === 480 ? 854 : h === 720 ? 1280 : 1920}, height:{ideal:h}, frameRate:{ideal:currentFps, max:currentFps} };
 }
 
+// ---------- criar / entrar ----------
 async function startHost(){
   myName = $('createName').value.trim();
   roomPass = $('createPass').value.trim();
@@ -535,6 +545,8 @@ async function startHost(){
   $('createErr').textContent = '';
   put(K.name, myName);
   roomCode = genCode(); isHost = true;
+  // ATUALIZA URL IMEDIATAMENTE
+  setUrlRoom(roomCode);
   await initMedia();
   showCreatedModal();
 }
@@ -548,28 +560,30 @@ async function startJoin(){
   $('joinErr').textContent = '';
   put(K.name, myName);
   roomCode = code; roomPass = pass; isHost = false;
+  setUrlRoom(roomCode);
   await initMedia();
   enterRoom();
   connectToRoom();
 }
 
-// Auto-entrada via link
 async function autoJoinFromLink(code, pass) {
   myName = get(K.name, '');
   if (!myName || myName.length < 2) {
     const n = prompt('Seu nome para entrar na sala:');
-    if (!n || n.trim().length < 2) { alert('Nome inválido.'); return; }
+    if (!n || n.trim().length < 2) { alert('Nome inválido.'); clearUrl(); return; }
     myName = n.trim();
     put(K.name, myName);
   }
   roomCode = code.toUpperCase();
   roomPass = pass || '';
   isHost = false;
+  setUrlRoom(roomCode);
   await initMedia();
   enterRoom();
   connectToRoom();
 }
 
+// ---------- conexão ----------
 function connectToRoom(){
   if(room){ try{ room.leave(); }catch{} room = null; }
   setConn('warn', 'conectando…');
@@ -714,6 +728,8 @@ function leaveRoom(){
   if(myStream) myStream.getTracks().forEach(t => t.stop());
   if(timerInterval) clearInterval(timerInterval);
   if(statsInterval) clearInterval(statsInterval);
+  // LIMPA URL E VOLTA PARA A HOME
+  clearUrl();
   location.href = location.pathname;
 }
 
@@ -1115,11 +1131,12 @@ function boot(){
   const savedName = get(K.name, '');
   if(savedName){ $('createName').value = savedName; $('joinName').value = savedName; }
 
-  // --- AUTO JOIN VIA LINK ---
+  // --- AUTO JOIN VIA LINK (a URL tem ?sala=XXXX) ---
   const params = new URLSearchParams(location.search);
   const salaParam = params.get('sala');
   const passParam = params.get('pass') || '';
   if(salaParam && salaParam.length === 4){
+    // Deixa a UI carregar antes de auto-entrar
     setTimeout(() => autoJoinFromLink(salaParam, passParam), 100);
   }
 
