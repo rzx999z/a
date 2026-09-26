@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DFIR — Sala de Análise</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+:root{
+  --bg:#0a0413;--bg2:#12071f;--panel:#150a26;--panel2:#1b0f33;
+  --border:#3b2364;--purple:#7c3aed;--bright:#a855f7;--neon:#c084fc;
+  --fg:#f1e9ff;--dim:#8f7fb8;--danger:#ff4757;--gold:#ffd166;
+  --ink:#000;--shadow:#000;--sink:#0a0413;--ok:#3ddc84;--warn:#ffb020;
+  --font-px:"Press Start 2P",monospace;--font-body:Consolas,"Lucida Console",monospace;
+  --base:13px;--sidebar-w:220px;--chat-h:140px;
+}
+html,body{height:100%;margin:0}
+body{color:var(--fg);font-family:var(--font-body);font-size:var(--base);background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+button{font-family:inherit}
+h1,h2,h3{font-family:var(--font-px);font-weight:400;text-transform:uppercase;line-height:1.5;margin:0}
+input,textarea{background:var(--sink);border:2px solid var(--border);color:var(--fg);padding:8px 10px;font-family:var(--font-body);font-size:12px;outline:none}
+input:focus,textarea:focus{border-color:var(--bright)}
+::placeholder{color:#5c4a86}
+.topbar{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:2px solid var(--border);background:var(--bg2);flex-shrink:0;height:52px}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--font-px);font-size:14px;color:#fff;text-shadow:2px 2px 0 var(--purple);cursor:pointer;user-select:none}
+.brand svg{display:block}
+.topbar-center{flex:1;display:flex;align-items:center;justify-content:center;gap:14px;min-width:0}
+.room-id{font-family:var(--font-px);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:8px}
+.room-id b{color:var(--neon);font-family:var(--font-px);font-size:12px;letter-spacing:2px;padding:3px 8px;background:var(--sink);border:2px solid var(--border);cursor:pointer}
+.room-id b:hover{border-color:var(--neon)}
+.conn-badge{font-family:var(--font-px);font-size:9px;padding:5px 10px;background:var(--sink);border:2px solid var(--border);text-transform:uppercase;display:flex;align-items:center;gap:6px}
+.conn-badge .dot{width:8px;height:8px;border-radius:50%;background:var(--dim);display:inline-block}
+.conn-badge.on{border-color:var(--ok);color:var(--ok)}
+.conn-badge.on .dot{background:var(--ok);animation:pulse 1.4s infinite}
+.conn-badge.warn{border-color:var(--warn);color:var(--warn)}
+.conn-badge.warn .dot{background:var(--warn);animation:pulse 1.4s infinite}
+.conn-badge.err{border-color:var(--danger);color:var(--danger)}
+.conn-badge.err .dot{background:var(--danger)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.room-timer{font-family:var(--font-px);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:6px}
+.topbar-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.theme-switch{display:inline-flex;align-items:stretch;border:2px solid var(--border);background:var(--bg2)}
+.theme-switch button{background:transparent;border:0;border-right:1px solid var(--border);cursor:pointer;padding:5px 8px;font-size:13px;line-height:1;filter:grayscale(.7) opacity(.5)}
+.theme-switch button:last-child{border-right:0}
+.theme-switch button:hover{background:var(--panel);filter:none}
+.theme-switch button.active{background:var(--purple);filter:none}
+.user-chip{font-family:var(--font-px);font-size:9px;display:flex;align-items:center;gap:6px;padding:5px 10px;background:var(--sink);border:2px solid var(--border);text-transform:uppercase}
+.user-chip .dot{color:var(--ok);font-size:12px}
+.btn-leave{background:var(--danger);color:#fff;border:2px solid var(--ink);padding:7px 14px;cursor:pointer;font-family:var(--font-px);font-size:9px;text-transform:uppercase;box-shadow:2px 2px 0 var(--shadow)}
+.btn-leave:hover{background:#c81e3a}
+.btn-reconnect{background:var(--bg2);color:var(--warn);border:2px solid var(--warn);padding:6px 10px;cursor:pointer;font-family:var(--font-px);font-size:8px;text-transform:uppercase}
+.btn-reconnect:hover{background:var(--panel)}
+#viewHome{flex:1;min-height:0;overflow-y:auto}
+#viewRoom{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.hero{text-align:center;padding:36px 16px 20px}
+.hero h1{font-size:18px;color:#fff;text-shadow:3px 3px 0 var(--purple),6px 6px 0 var(--shadow)}
+.hero p{color:var(--dim);font-family:var(--font-px);font-size:9px;margin:10px 0 0}
+.cards{display:flex;flex-wrap:wrap;gap:22px;justify-content:center;padding:20px 16px 60px}
+.card{background:var(--panel2);border:2px solid var(--border);box-shadow:5px 5px 0 var(--shadow);padding:22px;width:min(360px,92vw);display:flex;flex-direction:column;gap:10px;position:relative}
+.card::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;background:repeating-linear-gradient(90deg,var(--purple) 0 5px,var(--bg2) 5px 10px)}
+.card h2{font-size:10px;color:var(--neon);margin-top:6px}
+.card .hint{color:var(--dim);font-size:12px;margin:0}
+.card input{width:100%}
+.err{color:var(--danger);font-size:12px;min-height:14px;margin:0}
+.btn{display:inline-block;background:var(--purple);color:#fff;border:2px solid var(--ink);padding:10px 14px;cursor:pointer;font-family:var(--font-px);font-size:9px;text-transform:uppercase;box-shadow:3px 3px 0 var(--shadow)}
+.btn:hover{background:var(--bright)}
+.btn.ghost{background:var(--bg2);color:var(--neon);border-color:var(--border)}
+.btn.ghost:hover{background:var(--panel2);border-color:var(--bright)}
+.btn.small{padding:6px 10px;font-size:8px;box-shadow:2px 2px 0 var(--shadow)}
+.btn.gold{background:var(--gold);color:#221800}
+.room-shell{flex:1;min-height:0;display:flex;overflow:hidden}
+.sidebar-call{width:var(--sidebar-w);flex-shrink:0;background:var(--bg2);border-right:2px solid var(--purple);display:flex;flex-direction:column;overflow:hidden;position:relative;min-width:150px;max-width:480px}
+.sidebar-call.collapsed{width:44px!important;min-width:44px}
+.sidebar-call.collapsed .call-list,.sidebar-call.collapsed .call-header .left span:first-child,.sidebar-call.collapsed .call-header .count-badge,.sidebar-call.collapsed .call-card *:not(.call-avatar){display:none!important}
+.sidebar-call.collapsed .call-card{padding:6px;display:flex;justify-content:center}
+.sidebar-call.collapsed .call-header{justify-content:center;padding:8px 4px}
+.sidebar-call.collapsed .call-header .left{gap:0}
+.resize-handle-x{position:absolute;top:0;right:-3px;width:6px;height:100%;z-index:6;cursor:col-resize;background:transparent}
+.resize-handle-x:hover{background:var(--neon)}
+.call-header{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:9px 12px;border-bottom:2px solid var(--border);font-family:var(--font-px);font-size:9px;letter-spacing:.08em;flex-shrink:0}
+.call-header .left{display:flex;align-items:center;gap:8px}
+.call-header .count-badge{background:var(--purple);color:#fff;font-size:10px;padding:2px 6px;font-family:var(--font-px)}
+.collapse-btn{background:transparent;border:1px solid var(--border);color:var(--dim);cursor:pointer;padding:2px 6px;font-size:10px;line-height:1}
+.collapse-btn:hover{color:var(--neon);border-color:var(--neon)}
+.call-list{flex:1;overflow-y:auto;padding:8px}
+.call-card{border:2px solid var(--border);background:var(--panel2);padding:8px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px;position:relative}
+.call-card.speaking{border-color:var(--neon);box-shadow:0 0 0 1px var(--neon) inset}
+.call-card.streaming{border-color:var(--gold)}
+.call-card-top{display:flex;align-items:center;gap:8px}
+.call-avatar{width:28px;height:28px;background:var(--panel);border:2px solid var(--border);display:grid;place-items:center;flex-shrink:0}
+.call-avatar svg{width:20px;height:20px}
+.call-meta{flex:1;min-width:0}
+.call-name{font-family:var(--font-px);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.call-status{font-size:10px;color:var(--dim);margin-top:2px}
+.call-status.live{color:var(--ok)}
+.call-volume{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--dim)}
+.call-volume input[type=range]{flex:1;height:4px;-webkit-appearance:none;background:var(--sink);border:1px solid var(--border);outline:none;padding:0}
+.call-volume input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:16px;background:var(--neon);border:1px solid var(--ink);cursor:pointer}
+.live-badge{align-self:flex-start;background:var(--danger);color:#fff;font-family:var(--font-px);font-size:7px;padding:3px 6px;letter-spacing:.1em}
+.stage{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
+.stage-tabs{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:2px solid var(--border);background:var(--bg2);flex-shrink:0;overflow-x:auto}
+.tab-btn{font-family:var(--font-px);font-size:9px;background:var(--panel2);color:var(--dim);border:2px solid var(--border);padding:6px 11px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.tab-btn:hover{color:var(--fg);border-color:var(--bright)}
+.tab-btn.active{background:var(--purple);color:#fff;border-color:var(--purple)}
+.tab-btn .num{color:var(--neon);font-size:9px}
+.tab-btn.active .num{color:#fff}
+.stage-breadcrumb{font-size:11px;color:var(--dim);display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;white-space:nowrap}
+.stage-breadcrumb b{color:var(--neon);font-weight:400}
+.stage-body{flex:1;min-height:0;position:relative;background:#000;overflow:hidden}
+.stage-grid{position:absolute;inset:0;padding:8px;display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-content:start;overflow-y:auto}
+.stage-grid.focus{grid-template-columns:1fr;grid-auto-rows:1fr;align-content:stretch;align-items:stretch}
+.stage-grid.focus .screen-card{min-height:unset}
+.stage-empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--dim);font-family:var(--font-px);font-size:10px;text-align:center;line-height:2;pointer-events:none}
+.screen-card{position:relative;background:#000;border:2px solid var(--border);overflow:hidden;min-height:140px;display:flex;flex-direction:column}
+.screen-card.self{border-color:var(--neon)}
+.screen-card.sharing{border-color:var(--gold)}
+.screen-card video{width:100%;height:100%;object-fit:contain;display:block;background:#000;flex:1;min-height:0}
+.screen-card.idle video{visibility:hidden}
+.screen-card.idle::after{content:"sem transmissão";position:absolute;inset:0;display:grid;place-items:center;color:var(--dim);font-family:var(--font-px);font-size:8px}
+.screen-label{position:absolute;top:6px;left:6px;z-index:3;background:rgba(0,0,0,.85);border:1px solid var(--purple);font-family:var(--font-px);font-size:7px;padding:4px 8px;color:var(--neon);max-width:calc(100% - 100px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.screen-actions{position:absolute;top:6px;right:6px;z-index:3;display:flex;gap:3px}
+.sa-btn{background:rgba(0,0,0,.85);border:2px solid var(--border);color:#fff;width:26px;height:24px;display:grid;place-items:center;font-size:12px;cursor:pointer;padding:0}
+.sa-btn:hover{border-color:var(--neon);color:var(--neon)}
+.stage-corner-actions{position:absolute;top:8px;right:8px;z-index:5;display:flex;gap:6px;pointer-events:none}
+.stage-corner-actions .sa-btn{width:30px;height:28px;pointer-events:auto}
+.quality-overlay{position:absolute;bottom:8px;right:8px;z-index:4;background:rgba(0,0,0,.85);border:1px solid var(--border);font-family:var(--font-px);font-size:7px;padding:4px 7px;color:var(--dim)}
+.quality-overlay b{color:var(--ok);font-weight:400}
+.chat-area{flex-shrink:0;background:var(--bg2);border-top:2px solid var(--border);display:flex;flex-direction:column;height:var(--chat-h);min-height:34px;max-height:60vh;position:relative;overflow:hidden}
+.chat-area.collapsed{height:34px!important}
+.chat-area.collapsed .chat-msgs,.chat-area.collapsed .chat-row{display:none}
+.resize-handle-y{position:absolute;top:-3px;left:0;width:100%;height:6px;cursor:row-resize;background:transparent;z-index:6}
+.resize-handle-y:hover{background:var(--neon)}
+.chat-header{display:flex;align-items:center;gap:8px;padding:7px 12px;font-family:var(--font-px);font-size:9px;color:var(--neon);cursor:pointer;user-select:none;flex-shrink:0}
+.chat-header .caret{margin-left:auto;color:var(--dim);font-size:11px}
+.chat-header .chat-count{background:var(--purple);color:#fff;font-size:9px;padding:1px 6px;margin-left:4px}
+.chat-msgs{flex:1;min-height:0;overflow-y:auto;padding:4px 12px 8px;display:flex;flex-direction:column;gap:3px}
+.cm{font-size:12.5px;line-height:1.5;word-break:break-word}
+.cm b{color:var(--neon);margin-right:5px;font-weight:400}
+.cm.sys{color:var(--dim);font-style:italic;font-size:11.5px}
+.cm .ct{color:var(--dim);font-size:10px;margin-left:6px;font-family:var(--font-px)}
+.chat-row{display:flex;gap:6px;padding:6px 12px;border-top:1px solid var(--border);flex-shrink:0}
+.chat-row input{flex:1;padding:6px 10px;font-size:12px}
+.footer-bar{flex-shrink:0;background:var(--bg2);border-top:2px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 12px;height:60px;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap}
+.footer-left{display:flex;align-items:center;gap:6px;flex:0 0 auto;flex-wrap:nowrap}
+.footer-right{display:flex;align-items:center;gap:6px;flex:0 0 auto;flex-wrap:nowrap;margin-left:auto}
+.footer-bar::-webkit-scrollbar{height:4px}
+.footer-bar::-webkit-scrollbar-thumb{background:var(--border)}
+.bar-select{background:var(--sink);color:var(--fg);border:2px solid var(--border);font-family:var(--font-px);font-size:9px;padding:6px 22px 6px 8px;cursor:pointer;outline:none;height:34px;flex:0 0 auto;background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),linear-gradient(135deg,var(--dim) 50%,transparent 50%);background-position:calc(100% - 12px) 14px,calc(100% - 7px) 14px;background-size:5px 5px,5px 5px;background-repeat:no-repeat;appearance:none;-webkit-appearance:none}
+.bar-select:focus{border-color:var(--bright)}
+.bar-select option{background:var(--bg2);color:var(--fg);font-family:var(--font-body);font-size:12px}
+.bar-btn{background:var(--panel2);color:var(--fg);border:2px solid var(--border);padding:0 12px;cursor:pointer;font-family:var(--font-px);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;height:34px;display:flex;align-items:center;gap:6px;flex:0 0 auto;white-space:nowrap}
+.bar-btn:hover{background:var(--panel);border-color:var(--bright);color:var(--neon)}
+.bar-btn.golive{background:var(--danger);color:#fff;border-color:var(--ink)}
+.bar-btn.golive:hover{background:#c81e3a;color:#fff}
+.bar-btn.golive.on{background:var(--gold);color:#221800}
+.bar-btn.golive.on:hover{background:#ffd23f}
+.bar-btn.active{background:var(--purple);color:#fff;border-color:var(--purple)}
+.bar-btn.cam.on{background:var(--purple);color:#fff;border-color:var(--purple)}
+.ptt-sq{width:50px;height:48px;background:var(--panel2);color:var(--fg);border:3px solid var(--border);cursor:pointer;font-family:var(--font-px);font-size:6px;line-height:1.4;letter-spacing:.04em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;text-align:center;user-select:none;-webkit-user-select:none;touch-action:none;padding:2px;flex:0 0 auto}
+.ptt-sq:hover{border-color:var(--bright)}
+.ptt-sq.talking{border-color:var(--neon);background:#2a1550;color:#fff;box-shadow:0 0 0 2px rgba(192,132,252,.45)}
+.ptt-sq.noaudio{border-color:var(--danger);color:var(--danger);cursor:not-allowed}
+.ptt-lbl{font-family:var(--font-px);font-size:6px;color:var(--dim);letter-spacing:.08em;text-align:center;margin-top:2px}
+.ptt-wrap{display:flex;flex-direction:column;align-items:center;flex:0 0 auto}
+.ptt-wrap .ptt-lbl.live{color:var(--neon)}
+.bar-toggle{display:flex;align-items:center;gap:6px;background:var(--panel2);border:2px solid var(--border);color:var(--fg);padding:0 12px;cursor:pointer;font-family:var(--font-px);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;height:34px;flex:0 0 auto;white-space:nowrap}
+.bar-toggle:hover{border-color:var(--bright)}
+.bar-toggle.on{background:var(--purple);color:#fff;border-color:var(--purple)}
+.bar-toggle .lbl{color:var(--dim)}
+.bar-toggle.on .lbl{color:#fff}
+.modal{position:fixed;inset:0;background:rgba(6,3,14,.85);display:grid;place-items:center;z-index:70;padding:16px}
+.modal-box{background:var(--panel2);border:2px solid var(--purple);box-shadow:6px 6px 0 var(--shadow);padding:22px;width:min(500px,94vw);max-height:90vh;overflow:auto}
+.modal-box h3{font-size:11px;color:var(--neon);margin-bottom:12px}
+.cred{display:flex;align-items:center;gap:8px;background:var(--sink);border:2px solid var(--border);padding:8px 10px;margin:8px 0}
+.cred b{font-family:var(--font-body);font-size:14px;flex:1;word-break:break-all;color:var(--neon)}
+.cred .lbl{color:var(--dim);font-family:var(--font-px);font-size:7px;text-transform:uppercase;min-width:80px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);border:2px solid var(--purple);box-shadow:3px 3px 0 var(--shadow);padding:10px 16px;font-family:var(--font-px);font-size:8px;color:var(--neon);z-index:95;max-width:80vw;text-align:center}
+@media (max-width:760px){
+  .sidebar-call{width:44px}
+  .footer-bar{height:auto;padding:6px;gap:6px}
+  .bar-btn,.bar-select,.bar-toggle{font-size:7.5px;padding:0 8px;height:30px}
+  .ptt-sq{width:44px;height:42px}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand" id="brandHome">
+    <svg width="30" height="30" viewBox="0 0 24 24" shape-rendering="crispEdges">
+      <rect x="7" y="1" width="10" height="1" fill="#000"/><rect x="6" y="2" width="12" height="3" fill="#000"/>
+      <rect x="6" y="5" width="12" height="1" fill="#7c3aed"/><rect x="1" y="6" width="22" height="2" fill="#000"/>
+      <rect x="5" y="8" width="14" height="6" fill="#0a0512"/><rect x="6" y="14" width="12" height="2" fill="#0a0512"/>
+      <rect x="7" y="9" width="3" height="1" fill="#fff"/><rect x="6" y="10" width="5" height="2" fill="#fff"/>
+      <rect x="7" y="12" width="3" height="1" fill="#fff"/><rect x="8" y="10" width="2" height="2" fill="#000"/>
+      <rect x="14" y="9" width="3" height="1" fill="#fff"/><rect x="13" y="10" width="5" height="2" fill="#fff"/>
+      <rect x="14" y="12" width="3" height="1" fill="#fff"/><rect x="15" y="10" width="2" height="2" fill="#000"/>
+      <rect x="3" y="13" width="2" height="3" fill="#000"/><rect x="19" y="13" width="2" height="3" fill="#000"/>
+      <rect x="1" y="18" width="22" height="5" fill="#000"/><rect x="11" y="17" width="2" height="6" fill="#160a2b"/>
+    </svg>
+    DFIR
+  </div>
+  <div class="topbar-center" id="topbarCenter" hidden>
+    <div class="room-id">SALA <b id="roomCodeTop">----</b></div>
+    <div class="conn-badge warn" id="connBadge"><span class="dot"></span><span id="connText">conectando…</span></div>
+    <div class="room-timer">⏳ <span id="roomTimer">0min</span></div>
+  </div>
+  <div class="topbar-right">
+    <button class="btn-reconnect" id="reconnectBtn" hidden title="Reconectar agora">⟳ RECONECTAR</button>
+    <div class="theme-switch">
+      <button type="button" data-theme-btn="purple" class="active">🟣</button>
+      <button type="button" data-theme-btn="dark">🌙</button>
+      <button type="button" data-theme-btn="light">☀️</button>
+    </div>
+    <div class="user-chip" id="userChip" hidden>
+      <span id="userChipName">—</span>
+      <span class="dot">●</span>
+      <span id="userChipStatus">NA CALL</span>
+    </div>
+    <button class="btn-leave" id="leaveBtn" hidden>SAIR</button>
+  </div>
+</header>
+
+<main id="viewHome">
+  <section class="hero">
+    <h1>DFIR // Sala de Análise</h1>
+    <p>call tática · transmissão de tela · p2p</p>
+  </section>
+  <div class="cards">
+    <div class="card">
+      <h2>➕ Criar sala</h2>
+      <p class="hint">Gera um código de 4 caracteres. Compartilha com a equipe.</p>
+      <input id="createName" placeholder="Seu nome" maxlength="24" autocomplete="off">
+      <input id="createPass" placeholder="Senha (opcional)" maxlength="32" autocomplete="off">
+      <button class="btn" id="createBtn">⚡ Criar sala</button>
+      <p class="err" id="createErr"></p>
+    </div>
+    <div class="card">
+      <h2>🚪 Entrar em sala</h2>
+      <p class="hint">Cole o código que te passaram.</p>
+      <input id="joinName" placeholder="Seu nome" maxlength="24" autocomplete="off">
+      <input id="joinCode" placeholder="Código" maxlength="4" style="text-transform:uppercase" autocomplete="off">
+      <input id="joinPass" placeholder="Senha (se houver)" maxlength="32" autocomplete="off">
+      <button class="btn" id="joinBtn">Continuar</button>
+      <p class="err" id="joinErr"></p>
+    </div>
+  </div>
+</main>
+
+<main id="viewRoom" hidden>
+  <div class="room-shell">
+    <aside class="sidebar-call" id="sidebarCall">
+      <div class="call-header">
+        <div class="left">
+          <span>🎧 NA CALL</span>
+          <span class="count-badge" id="callCount">1</span>
+        </div>
+        <button class="collapse-btn" id="sidebarToggle" title="Recolher painel">◀</button>
+      </div>
+      <div class="call-list" id="callList"></div>
+      <div class="resize-handle-x" id="sidebarResize"></div>
+    </aside>
+
+    <section class="stage">
+      <div class="stage-tabs">
+        <button class="tab-btn active" id="tabFontes"><span>🗔</span> Fontes <span class="num" id="fontesCount">(0)</span></button>
+        <button class="tab-btn" id="tabGrade"><span>▦</span> Grade</button>
+        <button class="tab-btn" id="tabPalco"><span>◉</span> Palco</button>
+        <div class="stage-breadcrumb" id="stageBreadcrumb">— · sem transmissão</div>
+      </div>
+
+      <div class="stage-body">
+        <div class="stage-grid" id="stageGrid"></div>
+        <div class="stage-empty" id="stageEmpty">
+          Ninguém transmitindo ainda.<br>Liga a câmera ou compartilha a tela ↓
+        </div>
+        <div class="stage-corner-actions">
+          <button class="sa-btn" id="stageFull" title="Tela cheia">⛶</button>
+        </div>
+        <div class="quality-overlay" id="qualityOverlay" hidden>
+          <b id="qRes">720p</b> · <span id="qFps">30fps</span> · <b id="qBit">—</b>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="chat-area" id="chatArea">
+    <div class="resize-handle-y" id="chatResize"></div>
+    <div class="chat-header" id="chatHeader">
+      💬 CHAT <span class="chat-count" id="chatCount">0</span>
+      <span class="caret" id="chatCaret">▾</span>
+    </div>
+    <div class="chat-msgs" id="roomMsgs"></div>
+    <div class="chat-row">
+      <input id="roomInput" placeholder="Mensagem…" maxlength="500" autocomplete="off">
+      <button class="btn small" id="roomSend">▶</button>
+    </div>
+  </div>
+
+  <div class="footer-bar">
+    <div class="footer-left">
+      <select class="bar-select" id="resSelect" title="Resolução">
+        <option value="480">480p</option>
+        <option value="720" selected>720p</option>
+        <option value="1080">1080p</option>
+      </select>
+      <select class="bar-select" id="fpsSelect" title="FPS">
+        <option value="30" selected>30fps</option>
+        <option value="60">60fps</option>
+      </select>
+      <select class="bar-select" id="bitrateSelect" title="Bitrate">
+        <option value="auto" selected>auto</option>
+        <option value="1500000">1.5M</option>
+        <option value="3000000">3M</option>
+        <option value="5000000">5M</option>
+        <option value="8000000">8M</option>
+        <option value="12000000">12M</option>
+      </select>
+      <button class="bar-btn golive" id="goLiveBtn">⏺ GO LIVE</button>
+      <button class="bar-btn" id="camBtn">📷 CÂMERA</button>
+      <button class="bar-btn" id="applyQualityBtn" title="Aplicar qualidade">⚙ APLICAR</button>
+    </div>
+    <div class="footer-right">
+      <div class="ptt-wrap">
+        <button class="ptt-sq" id="pttBtn">SEGURE<br>FALAR</button>
+        <div class="ptt-lbl" id="pttLabel">PRONTO</div>
+      </div>
+      <button class="bar-toggle on" id="noiseBtn"><span class="lbl">RUÍDO:</span><span class="val" id="noiseVal">ON</span></button>
+      <button class="bar-toggle" id="micBtn"><span class="lbl">MIC:</span><span class="val" id="micVal">FECHADO</span></button>
+    </div>
+  </div>
+</main>
+
+<div class="modal" id="createdModal" hidden>
+  <div class="modal-box">
+    <h3>🕵️ Sala criada</h3>
+    <div class="cred"><span class="lbl">Código</span><b id="cId"></b><button class="btn ghost small" data-copy="cId">copiar</button></div>
+    <div class="cred"><span class="lbl">Link</span><b id="cLink" style="font-size:10px"></b><button class="btn ghost small" data-copy="cLink">copiar</button></div>
+    <div class="cred" id="cPassRow" hidden><span class="lbl">Senha</span><b id="cPass"></b><button class="btn ghost small" data-copy="cPass">copiar</button></div>
+    <div style="text-align:center;margin:12px 0"><canvas id="qrCanvas" style="background:#fff;padding:6px;border:2px solid var(--border)"></canvas></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button class="btn gold" id="enterRoomBtn">ENTRAR NA SALA</button>
+      <button class="btn ghost small" id="closeCreatedBtn">fechar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toastEl" hidden></div>
+
+<script type="module">
+import {joinRoom} from 'https://esm.sh/trystero@0.25.4/nostr';
+
+const $ = id => document.getElementById(id);
+const APP_ID = 'dfir-analise-v12';
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const K = { theme:'dfir-theme', name:'dfir-name' };
+const SELF = '__self__';
+
+const BITRATES = {
+  '480-30': 1200000, '480-60': 2200000,
+  '720-30': 2500000, '720-60': 4500000,
+  '1080-30': 5000000, '1080-60': 9000000
+};
+
+// ============================================================
+// MUDANÇA CRÍTICA: Força o uso de TURN para garantir conexão
+// em qualquer rede (NAT restritivo, firewall, 4G, etc.)
+// ============================================================
+const RTC_CONFIG = {
+  iceServers: [
+    // STUN (descoberta de IP público)
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    // TURN (relay para quando a conexão direta falha)
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+  ],
+  // FORÇA o uso do TURN, ignorando tentativas de conexão direta
+  iceTransportPolicy: 'relay',
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require'
+};
+
+let room = null;
+let roomCode = null, roomPass = '', myName = '', isHost = false;
+let myStream = null, audioTrack = null, camTrack = null, screenTrack = null, placeholderTrack = null;
+let pttPressed = false, micMuted = false, noiseSuppression = true;
+let streamActive = false;
+let activeSource = null;
+let currentRes = 720, currentFps = 30, currentBitrate = 'auto';
+let roomStartTime = null, timerInterval = null;
+let statsInterval = null;
+let lastBytesSent = 0, lastBytesTs = 0;
+const participants = new Map();
+const chatHistory = [];
+const peerConns = new Map();
+let sendProfile, getProfile, sendChat, getChat, sendPingAct, getPingAct, sendPongAct, getPongAct, sendKick, getKick;
+
+const THEMES = ['purple','dark','light'];
+const get = (k,d) => { try { return localStorage.getItem(k) ?? d } catch { return d } };
+const put = (k,v) => { try { localStorage.setItem(k,v) } catch {} };
+const curTheme = () => { const t = get(K.theme,'purple'); return THEMES.includes(t) ? t : 'purple' };
+function applyTheme(t){
+  if(t === 'purple') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+  document.querySelectorAll('[data-theme-btn]').forEach(b => b.classList.toggle('active', b.dataset.themeBtn === t));
+}
+function setTheme(t){ if(THEMES.includes(t)){ put(K.theme, t); applyTheme(t); } }
+
+let actx = null;
+const ensureCtx = () => { if(!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch{ return null } } if(actx.state==='suspended') actx.resume().catch(()=>{}); return actx; };
+function tone(freq, dur, type='square', vol=0.035){
+  const c = ensureCtx(); if(!c) return;
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, c.currentTime);
+  g.gain.setValueAtTime(vol, c.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + dur);
+  o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + dur + 0.02);
+}
+const SFX = { click: () => tone(620, 0.06, 'square', 0.03), ok: () => tone(880, 0.09, 'square', 0.035, 1200), err: () => tone(165, 0.18, 'sawtooth', 0.045), msg: () => tone(780, 0.05, 'square', 0.03) };
+
+function genCode(){ let s=''; for(let i=0;i<4;i++) s += CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)]; return s; }
+
+let toastTimer = null;
+function toast(msg, ms=2400){
+  const el = $('toastEl');
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, ms);
+}
+function roomUrl(){ return location.origin + location.pathname + '?sala=' + roomCode; }
+function escapeHtml(s){ return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+
+function setConn(state, text){
+  const b = $('connBadge'); if(!b) return;
+  b.className = 'conn-badge ' + state;
+  $('connText').textContent = text;
+  $('reconnectBtn').hidden = (state === 'on');
+}
+
+function makePlaceholder(){
+  const c = document.createElement('canvas'); c.width = 320; c.height = 180;
+  const x = c.getContext('2d');
+  x.fillStyle = '#0a0413'; x.fillRect(0,0,320,180);
+  x.strokeStyle = '#241543'; x.lineWidth = 1;
+  for(let i=0;i<320;i+=20){ x.beginPath(); x.moveTo(i,0); x.lineTo(i,180); x.stroke(); }
+  for(let j=0;j<180;j+=20){ x.beginPath(); x.moveTo(0,j); x.lineTo(320,j); x.stroke(); }
+  x.fillStyle = '#3b2364'; x.font = '10px monospace'; x.textAlign = 'center';
+  x.fillText('DFIR', 160, 95);
+  return c.captureStream(2).getVideoTracks()[0] || null;
+}
+
+async function initMedia(){
+  myStream = new MediaStream();
+  if(navigator.mediaDevices?.getUserMedia){
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true },
+        video: false
+      });
+      audioTrack = s.getAudioTracks()[0];
+      audioTrack.enabled = true;
+      audioTrack.contentHint = 'speech';
+      myStream.addTrack(audioTrack);
+    } catch(e){ console.warn('sem mic:', e.message); }
+  }
+  placeholderTrack = makePlaceholder();
+  if(placeholderTrack) myStream.addTrack(placeholderTrack);
+  updatePttAvailability();
+}
+
+function updatePttAvailability(){
+  const btn = $('pttBtn'), lbl = $('pttLabel');
+  if(!audioTrack){ btn.classList.add('noaudio'); lbl.textContent = 'SEM MIC'; }
+  else { btn.classList.remove('noaudio'); lbl.textContent = 'PRONTO'; }
+}
+
+async function applyQualityToSender(){
+  if(!streamActive) return;
+  const key = currentRes + '-' + currentFps;
+  const bitrate = currentBitrate === 'auto' ? BITRATES[key] : parseInt(currentBitrate, 10);
+  for(const pc of peerConns.values()){
+    const senders = pc.getSenders();
+    const vs = senders.find(s => s.track && s.track.kind === 'video');
+    if(vs){
+      try {
+        const params = vs.getParameters();
+        if(!params.encodings || !params.encodings.length) params.encodings = [{}];
+        params.encodings[0].maxBitrate = bitrate;
+        params.encodings[0].maxFramerate = currentFps;
+        params.degradationPreference = 'maintain-resolution';
+        await vs.setParameters(params);
+      } catch(e){ console.warn('setParameters:', e); }
+    }
+  }
+  const targetW = currentRes === 480 ? 854 : currentRes === 720 ? 1280 : 1920;
+  const targetH = currentRes === 480 ? 480 : currentRes === 720 ? 720 : 1080;
+  const t = screenTrack || camTrack;
+  if(t){
+    try { await t.applyConstraints({ width:{ideal:targetW}, height:{ideal:targetH}, frameRate:{ideal:currentFps, max:currentFps} }); }
+    catch(e){ console.warn('applyConstraints:', e); }
+  }
+  $('qRes').textContent = currentRes + 'p';
+  $('qFps').textContent = currentFps + 'fps';
+  $('qBit').textContent = (bitrate / 1000000).toFixed(1) + ' Mbps';
+}
+
+function captureConstraints(){
+  const h = currentRes === 480 ? 480 : currentRes === 720 ? 720 : 1080;
+  return { width:{ideal: h === 480 ? 854 : h === 720 ? 1280 : 1920}, height:{ideal:h}, frameRate:{ideal:currentFps, max:currentFps} };
+}
+
+async function startHost(){
+  myName = $('createName').value.trim();
+  roomPass = $('createPass').value.trim();
+  if(myName.length < 2){ $('createErr').textContent = 'Nome precisa ter pelo menos 2 letras.'; return; }
+  $('createErr').textContent = '';
+  put(K.name, myName);
+  roomCode = genCode(); isHost = true;
+  await initMedia();
+  showCreatedModal();
+}
+
+async function startJoin(){
+  myName = $('joinName').value.trim();
+  const code = $('joinCode').value.trim().toUpperCase();
+  const pass = $('joinPass').value.trim();
+  if(myName.length < 2){ $('joinErr').textContent = 'Nome precisa ter pelo menos 2 letras.'; return; }
+  if(code.length !== 4){ $('joinErr').textContent = 'Código precisa ter 4 caracteres.'; return; }
+  $('joinErr').textContent = '';
+  put(K.name, myName);
+  roomCode = code; roomPass = pass; isHost = false;
+  await initMedia();
+  enterRoom();
+  connectToRoom();
+}
+
+// Auto-entrada via link
+async function autoJoinFromLink(code, pass) {
+  myName = get(K.name, '');
+  if (!myName || myName.length < 2) {
+    const n = prompt('Seu nome para entrar na sala:');
+    if (!n || n.trim().length < 2) { alert('Nome inválido.'); return; }
+    myName = n.trim();
+    put(K.name, myName);
+  }
+  roomCode = code.toUpperCase();
+  roomPass = pass || '';
+  isHost = false;
+  await initMedia();
+  enterRoom();
+  connectToRoom();
+}
+
+function connectToRoom(){
+  if(room){ try{ room.leave(); }catch{} room = null; }
+  setConn('warn', 'conectando…');
+
+  try {
+    room = joinRoom({
+      appId: APP_ID,
+      password: roomPass || undefined,
+      rtcConfig: RTC_CONFIG
+    }, roomCode);
+  } catch(e){
+    console.error('[DFIR] joinRoom falhou:', e);
+    setConn('err', 'erro');
+    toast('Falha ao entrar: ' + e.message);
+    return;
+  }
+
+  [sendProfile, getProfile] = room.makeAction('profile');
+  [sendChat, getChat] = room.makeAction('chat');
+  [sendPingAct, getPingAct] = room.makeAction('ping');
+  [sendPongAct, getPongAct] = room.makeAction('pong');
+  [sendKick, getKick] = room.makeAction('kick');
+
+  room.onPeerJoin(peerId => {
+    console.log('[DFIR] peer:', peerId);
+    participants.set(peerId, { name:'…', volume:1 });
+    renderCallList();
+    setConn('on', 'conectado (' + (participants.size + 1) + ')');
+    sendProfile({ name: myName, pass: roomPass, isHost, streaming: streamActive, source: activeSource }, peerId);
+    if(myStream){ try{ room.addStream(myStream, peerId); }catch(e){ console.warn(e); } }
+    setTimeout(applyQualityToSender, 800);
+  });
+
+  room.onPeerLeave(peerId => {
+    const p = participants.get(peerId);
+    if(p) addRoomMsg(null, { sys:true, text: p.name + ' saiu' });
+    participants.delete(peerId);
+    peerConns.delete(peerId);
+    removeCard(peerId);
+    renderCallList();
+    updateStageEmpty();
+    if(participants.size === 0) setConn('warn', 'aguardando peer');
+    else setConn('on', 'conectado (' + (participants.size + 1) + ')');
+  });
+
+  room.onPeerStream((stream, peerId) => {
+    attachStream(peerId, stream);
+  });
+
+  getProfile((data, peerId) => {
+    if(!data) return;
+    if(isHost && roomPass && data.pass !== roomPass){
+      sendKick({ reason:'senha incorreta' }, peerId); return;
+    }
+    const ex = participants.get(peerId) || {};
+    participants.set(peerId, { ...ex, name: data.name || ex.name, isHost: !!data.isHost, streaming: !!data.streaming, source: data.source || null });
+    if(isHost) sendProfile({ name: myName, pass: roomPass, isHost, streaming: streamActive, source: activeSource }, peerId);
+    renderCallList();
+    setConn('on', 'conectado (' + (participants.size + 1) + ')');
+  });
+
+  getChat((data, peerId) => {
+    if(!data) return;
+    addRoomMsg(data.from || peerId, { text: data.msg, at: data.at });
+    SFX.msg();
+  });
+  getPingAct((data, peerId) => { if(data) sendPongAct({ t:data.t }, peerId); });
+  getPongAct(() => {});
+  getKick((data) => { alert('Você foi removido: ' + (data?.reason || '')); leaveRoom(); });
+
+  if(myStream){ try{ room.addStream(myStream); }catch(e){ console.warn(e); } }
+
+  setConn('warn', 'aguardando peer');
+  setTimeout(() => {
+    if(participants.size === 0) setConn('warn', 'aguardando peer');
+  }, 800);
+
+  startPing();
+  startStats();
+}
+
+function startPing(){
+  if(window.__pingInt) clearInterval(window.__pingInt);
+  window.__pingInt = setInterval(() => {
+    if(!room || participants.size === 0) return;
+    try { sendPingAct({ t:Date.now() }); } catch {}
+  }, 5000);
+}
+
+function startStats(){
+  if(statsInterval) clearInterval(statsInterval);
+  statsInterval = setInterval(async () => {
+    if(!room || participants.size === 0) return;
+    let totalBitrate = 0, count = 0;
+    for(const pc of peerConns.values()){
+      try {
+        const stats = await pc.getStats();
+        stats.forEach(r => {
+          if(r.type === 'outbound-rtp' && r.kind === 'video' && r.bytesSent){
+            const now = performance.now();
+            if(lastBytesTs > 0 && lastBytesSent > 0){
+              const db = r.bytesSent - lastBytesSent;
+              const dt = (now - lastBytesTs) / 1000;
+              if(dt > 0){ totalBitrate += (db * 8) / dt; count++; }
+            }
+            lastBytesSent = r.bytesSent;
+            lastBytesTs = now;
+          }
+        });
+      } catch {}
+    }
+    if(count > 0 && totalBitrate > 0){
+      $('qBit').textContent = (totalBitrate / 1000000).toFixed(1) + ' Mbps';
+    }
+  }, 2000);
+}
+
+function enterRoom(){
+  $('viewHome').hidden = true; $('viewRoom').hidden = false;
+  $('topbarCenter').hidden = false;
+  $('userChip').hidden = false;
+  $('leaveBtn').hidden = false;
+  $('roomCodeTop').textContent = roomCode;
+  $('userChipName').textContent = myName || '—';
+  $('userChipStatus').textContent = 'NA CALL';
+  roomStartTime = Date.now();
+  if(timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const min = Math.floor((Date.now() - roomStartTime) / 60000);
+    $('roomTimer').textContent = min + 'min';
+  }, 30000);
+  $('roomTimer').textContent = '0min';
+  $('qualityOverlay').hidden = false;
+  renderCallList();
+  updateStageEmpty();
+  addRoomMsg(null, { sys:true, text: 'Você entrou na sala ' + roomCode });
+}
+
+function leaveRoom(){
+  if(room){ try{ room.leave(); }catch{} room = null; }
+  if(myStream) myStream.getTracks().forEach(t => t.stop());
+  if(timerInterval) clearInterval(timerInterval);
+  if(statsInterval) clearInterval(statsInterval);
+  location.href = location.pathname;
+}
+
+function renderCallList(){
+  const list = $('callList'); if(!list) return;
+  list.innerHTML = '';
+  const all = new Map();
+  all.set(SELF, { name: myName || 'eu', self:true, streaming: streamActive, source: activeSource, talking: pttPressed, volume: 1 });
+  for(const [id,p] of participants) all.set(id, p);
+  $('callCount').textContent = String(all.size);
+  for(const [id,p] of all){
+    const el = document.createElement('div');
+    el.className = 'call-card';
+    if(p.streaming) el.classList.add('streaming');
+    if(p.talking) el.classList.add('speaking');
+    const srcIcon = p.source === 'screen' ? '📺' : p.source === 'camera' ? '📷' : '';
+    el.innerHTML = `
+      <div class="call-card-top">
+        <div class="call-avatar">
+          <svg viewBox="0 0 24 24" shape-rendering="crispEdges">
+            <rect x="7" y="1" width="10" height="1" fill="#000"/><rect x="6" y="2" width="12" height="3" fill="#000"/>
+            <rect x="6" y="5" width="12" height="1" fill="#7c3aed"/><rect x="1" y="6" width="22" height="2" fill="#000"/>
+            <rect x="5" y="8" width="14" height="6" fill="#0a0512"/><rect x="6" y="14" width="12" height="2" fill="#0a0512"/>
+            <rect x="7" y="9" width="3" height="1" fill="#fff"/><rect x="6" y="10" width="5" height="2" fill="#fff"/>
+            <rect x="7" y="12" width="3" height="1" fill="#fff"/><rect x="8" y="10" width="2" height="2" fill="#000"/>
+            <rect x="14" y="9" width="3" height="1" fill="#fff"/><rect x="13" y="10" width="5" height="2" fill="#fff"/>
+            <rect x="14" y="12" width="3" height="1" fill="#fff"/><rect x="15" y="10" width="2" height="2" fill="#000"/>
+            <rect x="1" y="18" width="22" height="5" fill="#000"/>
+          </svg>
+        </div>
+        <div class="call-meta">
+          <div class="call-name">${escapeHtml(p.name)}${p.isHost ? ' 👑' : ''}${p.self ? ' (você)' : ''}</div>
+          <div class="call-status ${p.streaming ? 'live' : ''}">${p.streaming ? '● ' + (srcIcon || 'transmitindo') : 'na call'}</div>
+        </div>
+      </div>
+      <div class="call-volume">
+        <span>🔊</span>
+        <input type="range" min="0" max="100" value="${Math.round((p.volume ?? 1) * 100)}" data-peer="${escapeHtml(id)}">
+      </div>
+      ${p.streaming ? '<div class="live-badge">AO VIVO</div>' : ''}
+    `;
+    const slider = el.querySelector('input[type=range]');
+    slider.addEventListener('input', e => {
+      const v = parseInt(e.target.value, 10) / 100;
+      if(id !== SELF){
+        const pc = participants.get(id);
+        if(pc) pc.volume = v;
+        document.querySelectorAll(`[data-video-peer="${CSS.escape(id)}"] video`).forEach(vid => vid.volume = v);
+      }
+    });
+    list.appendChild(el);
+  }
+}
+
+function attachStream(peerId, stream){
+  const p = participants.get(peerId) || { name:'Anônimo' };
+  participants.set(peerId, p);
+  let card = document.querySelector(`[data-video-peer="${CSS.escape(peerId)}"]`);
+  if(!card){
+    card = document.createElement('div');
+    card.className = 'screen-card idle';
+    card.dataset.videoPeer = peerId;
+    card.innerHTML = `
+      <div class="screen-label"></div>
+      <div class="screen-actions"><button class="sa-btn" title="Tela cheia">⛶</button></div>
+      <video autoplay playsinline></video>
+    `;
+    card.querySelector('.sa-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      const v = card.querySelector('video'); if(v.requestFullscreen) v.requestFullscreen();
+    });
+    card.addEventListener('dblclick', () => {
+      const v = card.querySelector('video'); if(v.requestFullscreen) v.requestFullscreen();
+    });
+    $('stageGrid').appendChild(card);
+  }
+  const v = card.querySelector('video');
+  if(v.srcObject !== stream){ v.srcObject = stream; v.play().catch(()=>{}); }
+  updateCardFor(peerId);
+  updateStageEmpty();
+}
+function updateCardFor(peerId){
+  const card = document.querySelector(`[data-video-peer="${CSS.escape(peerId)}"]`);
+  if(!card) return;
+  const p = participants.get(peerId); if(!p) return;
+  const srcIcon = p.source === 'screen' ? ' 📺' : p.source === 'camera' ? ' 📷' : '';
+  card.querySelector('.screen-label').textContent = p.name + (p.streaming ? srcIcon : '');
+  card.classList.toggle('sharing', !!p.streaming);
+  card.classList.toggle('idle', !p.streaming);
+}
+function removeCard(peerId){
+  const c = document.querySelector(`[data-video-peer="${CSS.escape(peerId)}"]`);
+  if(c) c.remove();
+}
+function updateStageEmpty(){
+  const n = $('stageGrid').querySelectorAll('.screen-card').length;
+  $('stageEmpty').hidden = n > 0;
+  $('fontesCount').textContent = '(' + n + ')';
+}
+
+async function swapVideoTrack(newTrack){
+  if(!myStream) myStream = new MediaStream();
+  const oldStream = myStream;
+  const newStream = new MediaStream();
+  if(audioTrack) newStream.addTrack(audioTrack);
+  if(newTrack) newStream.addTrack(newTrack);
+  myStream = newStream;
+  if(room){
+    try{ room.removeStream(oldStream); }catch{}
+    try{ room.addStream(newStream); }catch(e){ console.warn('addStream swap', e); }
+  }
+  updateSelfCard();
+  setTimeout(applyQualityToSender, 500);
+}
+
+function updateSelfCard(){
+  let card = document.querySelector(`[data-video-peer="${SELF}"]`);
+  if(!streamActive){ if(card) card.remove(); updateStageEmpty(); return; }
+  if(!card){
+    card = document.createElement('div');
+    card.className = 'screen-card self';
+    card.dataset.videoPeer = SELF;
+    card.innerHTML = `
+      <div class="screen-label">você</div>
+      <div class="screen-actions"><button class="sa-btn" title="Tela cheia">⛶</button></div>
+      <video autoplay playsinline muted></video>
+    `;
+    card.querySelector('.sa-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      const v = card.querySelector('video'); if(v.requestFullscreen) v.requestFullscreen();
+    });
+    $('stageGrid').appendChild(card);
+  }
+  const v = card.querySelector('video');
+  if(v.srcObject !== myStream){ v.srcObject = myStream; v.play().catch(()=>{}); }
+  const srcIcon = activeSource === 'screen' ? ' 📺' : activeSource === 'camera' ? ' 📷' : '';
+  card.querySelector('.screen-label').textContent = 'você' + srcIcon;
+  updateStageEmpty();
+}
+
+async function toggleScreenShare(){
+  if(activeSource === 'screen'){ stopCurrentStream(); return; }
+  if(camTrack){ camTrack.stop(); camTrack = null; $('camBtn').classList.remove('on'); }
+  try {
+    const s = await navigator.mediaDevices.getDisplayMedia({
+      video: { ...captureConstraints(), cursor: 'motion' },
+      audio: false
+    });
+    screenTrack = s.getVideoTracks()[0];
+    screenTrack.contentHint = 'detail';
+    screenTrack.onended = () => { if(activeSource === 'screen') stopCurrentStream(); };
+    activeSource = 'screen';
+    streamActive = true;
+    await swapVideoTrack(screenTrack);
+    $('goLiveBtn').classList.add('on');
+    $('goLiveBtn').innerHTML = '⏹ AO VIVO';
+    $('userChipStatus').textContent = 'AO VIVO';
+    $('stageBreadcrumb').innerHTML = '<b>' + escapeHtml(myName || 'eu') + '</b> · Tela · ' + currentRes + 'p' + currentFps;
+    broadcastProfile();
+    renderCallList();
+    setTimeout(applyQualityToSender, 800);
+  } catch(e){
+    console.warn('screen share cancelado:', e.message);
+  }
+}
+
+async function toggleCamera(){
+  if(activeSource === 'camera'){ stopCurrentStream(); return; }
+  if(screenTrack){ screenTrack.stop(); screenTrack = null; }
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({
+      video: { ...captureConstraints(), facingMode: 'user' }
+    });
+    camTrack = s.getVideoTracks()[0];
+    camTrack.contentHint = 'motion';
+    activeSource = 'camera';
+    streamActive = true;
+    await swapVideoTrack(camTrack);
+    $('goLiveBtn').classList.add('on');
+    $('goLiveBtn').innerHTML = '⏹ AO VIVO';
+    $('userChipStatus').textContent = 'AO VIVO';
+    $('stageBreadcrumb').innerHTML = '<b>' + escapeHtml(myName || 'eu') + '</b> · Câmera · ' + currentRes + 'p' + currentFps;
+    broadcastProfile();
+    renderCallList();
+    setTimeout(applyQualityToSender, 800);
+  } catch(e){
+    alert('Câmera: ' + e.message);
+  }
+}
+
+function stopCurrentStream(){
+  if(screenTrack){ screenTrack.stop(); screenTrack = null; }
+  if(camTrack){ camTrack.stop(); camTrack = null; }
+  activeSource = null;
+  streamActive = false;
+  swapVideoTrack(placeholderTrack);
+  $('goLiveBtn').classList.remove('on');
+  $('goLiveBtn').innerHTML = '⏺ GO LIVE';
+  $('camBtn').classList.remove('on');
+  $('userChipStatus').textContent = 'NA CALL';
+  broadcastProfile();
+  renderCallList();
+}
+
+function broadcastProfile(){
+  if(!room || !sendProfile) return;
+  try { sendProfile({ name: myName, pass: roomPass, isHost, streaming: streamActive, source: activeSource }); } catch {}
+}
+
+function pttOn(){
+  if(!audioTrack || pttPressed) return;
+  pttPressed = true;
+  audioTrack.enabled = true;
+  $('pttBtn').classList.add('talking');
+  $('pttLabel').textContent = '🔴 FALANDO';
+  $('pttLabel').classList.add('live');
+  if(sendProfile) sendProfile({ name: myName, pass: roomPass, isHost, streaming: streamActive, source: activeSource, talking:true });
+  renderCallList();
+}
+function pttOff(){
+  if(!audioTrack || !pttPressed) return;
+  pttPressed = false;
+  audioTrack.enabled = false;
+  $('pttBtn').classList.remove('talking');
+  $('pttLabel').textContent = 'PRONTO';
+  $('pttLabel').classList.remove('live');
+  if(sendProfile) sendProfile({ name: myName, pass: roomPass, isHost, streaming: streamActive, source: activeSource, talking:false });
+  renderCallList();
+}
+function toggleMic(){
+  micMuted = !micMuted;
+  $('micBtn').classList.toggle('on', micMuted);
+  $('micVal').textContent = micMuted ? 'ABERTO' : 'FECHADO';
+}
+function toggleNoise(){
+  noiseSuppression = !noiseSuppression;
+  $('noiseBtn').classList.toggle('on', noiseSuppression);
+  $('noiseVal').textContent = noiseSuppression ? 'ON' : 'OFF';
+}
+
+function addRoomMsg(from, payload){
+  chatHistory.push({ from, msg:payload, at:Date.now() });
+  if(chatHistory.length > 300) chatHistory.shift();
+  $('chatCount').textContent = String(chatHistory.length);
+  renderRoomMsgs();
+}
+function renderRoomMsgs(){
+  const box = $('roomMsgs'); if(!box) return;
+  box.innerHTML = '';
+  for(const { from, msg } of chatHistory){
+    const div = document.createElement('div'); div.className = 'cm';
+    if(msg.sys){ div.classList.add('sys'); div.textContent = '* ' + msg.text; box.appendChild(div); continue; }
+    const p = from ? (participants.get(from) || { name:'?' }) : { name:'eu' };
+    const nm = document.createElement('b'); nm.textContent = (from ? '' : 'você ') + p.name;
+    const tx = document.createElement('span'); tx.textContent = msg.text;
+    const ct = document.createElement('span'); ct.className = 'ct';
+    ct.textContent = new Date(msg.at || Date.now()).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+    div.append(nm, tx, ct); box.appendChild(div);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+function sendRoomMsg(){
+  const text = $('roomInput').value.trim(); if(!text) return;
+  $('roomInput').value = '';
+  const at = Date.now();
+  addRoomMsg(null, { text, at });
+  if(sendChat){ try{ sendChat({ from: myName, msg:text, at }); }catch{} }
+}
+
+function showCreatedModal(){
+  $('cId').textContent = roomCode;
+  const link = roomUrl();
+  $('cLink').textContent = link;
+  if(roomPass){ $('cPassRow').hidden = false; $('cPass').textContent = roomPass; }
+  else $('cPassRow').hidden = true;
+  try {
+    const canvas = $('qrCanvas');
+    QRCode.toCanvas(canvas, link, { width:160, margin:1, color:{ dark:'#0c0517', light:'#ffffff' } }, err => { if(err) console.warn(err); });
+  } catch(e){ console.warn(e); }
+  $('createdModal').hidden = false;
+}
+
+function makeResizerX(handle, target, opts){
+  let startPos, startSize;
+  handle.addEventListener('mousedown', e => {
+    e.preventDefault(); e.stopPropagation();
+    startPos = e.clientX;
+    startSize = target.offsetWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const move = ev => {
+      let delta = ev.clientX - startPos;
+      if(opts.invert) delta = -delta;
+      const newSize = Math.max(opts.min, Math.min(opts.max, startSize + delta));
+      target.style.width = newSize + 'px';
+      document.documentElement.style.setProperty('--sidebar-w', newSize + 'px');
+    };
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try { put('dfir-sidebar-w', String(target.offsetWidth)); } catch {}
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+}
+function makeResizerY(handle, target, opts){
+  let startPos, startSize;
+  handle.addEventListener('mousedown', e => {
+    e.preventDefault(); e.stopPropagation();
+    startPos = e.clientY;
+    startSize = target.offsetHeight;
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    const move = ev => {
+      let delta = startPos - ev.clientY;
+      if(opts.invert) delta = -delta;
+      const newSize = Math.max(opts.min, Math.min(opts.max, startSize + delta));
+      target.style.height = newSize + 'px';
+      document.documentElement.style.setProperty('--chat-h', newSize + 'px');
+    };
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try { put('dfir-chat-h', String(target.offsetHeight)); } catch {}
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+}
+
+function initResizers(){
+  const savedSidebar = parseInt(get('dfir-sidebar-w', '220'), 10);
+  const sidebar = $('sidebarCall');
+  if(sidebar && savedSidebar){
+    sidebar.style.width = savedSidebar + 'px';
+    document.documentElement.style.setProperty('--sidebar-w', savedSidebar + 'px');
+  }
+  if($('sidebarResize') && $('sidebarCall')){
+    makeResizerX($('sidebarResize'), $('sidebarCall'), { min:150, max:480, invert:false });
+  }
+  const savedChat = parseInt(get('dfir-chat-h', '140'), 10);
+  const chat = $('chatArea');
+  if(chat && savedChat){
+    chat.style.height = savedChat + 'px';
+    document.documentElement.style.setProperty('--chat-h', savedChat + 'px');
+  }
+  if($('chatResize') && $('chatArea')){
+    makeResizerY($('chatResize'), $('chatArea'), { min:34, max: Math.floor(window.innerHeight * 0.6), invert:false });
+  }
+
+  $('sidebarToggle')?.addEventListener('click', e => {
+    e.stopPropagation();
+    const sb = $('sidebarCall');
+    if(!sb) return;
+    sb.classList.toggle('collapsed');
+    $('sidebarToggle').textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+    const w = sb.classList.contains('collapsed') ? 44 : (parseInt(get('dfir-sidebar-w', '220'), 10) || 220);
+    sb.style.width = w + 'px';
+    document.documentElement.style.setProperty('--sidebar-w', w + 'px');
+  });
+
+  $('chatHeader')?.addEventListener('dblclick', () => toggleChatCollapse());
+  $('chatHeader')?.addEventListener('click', (e) => {
+    if(e.target.closest('.caret') || e.target === $('chatHeader')) toggleChatCollapse();
+  });
+}
+function toggleChatCollapse(){
+  const c = $('chatArea'); if(!c) return;
+  c.classList.toggle('collapsed');
+  const caret = $('chatCaret');
+  if(caret) caret.textContent = c.classList.contains('collapsed') ? '▴' : '▾';
+  if(!c.classList.contains('collapsed')){
+    const h = parseInt(get('dfir-chat-h', '140'), 10) || 140;
+    c.style.height = h + 'px';
+    document.documentElement.style.setProperty('--chat-h', h + 'px');
+  } else {
+    c.style.height = '34px';
+  }
+}
+
+window.addEventListener('resize', () => {
+  const chat = $('chatArea');
+  if(chat && !chat.classList.contains('collapsed')){
+    const max = Math.floor(window.innerHeight * 0.6);
+    if(chat.offsetHeight > max) chat.style.height = max + 'px';
+  }
+});
+
+function boot(){
+  initResizers();
+  applyTheme(curTheme());
+  document.querySelectorAll('[data-theme-btn]').forEach(b => b.addEventListener('click', () => setTheme(b.dataset.themeBtn)));
+
+  const savedName = get(K.name, '');
+  if(savedName){ $('createName').value = savedName; $('joinName').value = savedName; }
+
+  // --- AUTO JOIN VIA LINK (CORRIGIDO) ---
+  const params = new URLSearchParams(location.search);
+  const salaParam = params.get('sala');
+  const passParam = params.get('pass') || '';
+  if(salaParam && salaParam.length === 4){
+    // Aguarda um pouco para o DOM e a mídia iniciarem antes de conectar
+    setTimeout(() => autoJoinFromLink(salaParam, passParam), 100);
+  }
+
+  $('brandHome').addEventListener('click', () => { if(!$('viewRoom').hidden) leaveRoom(); });
+  $('createBtn').addEventListener('click', startHost);
+  $('joinBtn').addEventListener('click', startJoin);
+  $('createName').addEventListener('keydown', e => { if(e.key === 'Enter') $('createPass').focus(); });
+  $('createPass').addEventListener('keydown', e => { if(e.key === 'Enter') startHost(); });
+  $('joinCode').addEventListener('keydown', e => { if(e.key === 'Enter') $('joinPass').focus(); });
+  $('joinPass').addEventListener('keydown', e => { if(e.key === 'Enter') startJoin(); });
+
+  document.querySelectorAll('[data-copy]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      navigator.clipboard?.writeText($(btn.dataset.copy).textContent);
+      btn.textContent = 'copiado!'; setTimeout(() => btn.textContent = 'copiar', 1200);
+    });
+  });
+  $('enterRoomBtn').addEventListener('click', () => { $('createdModal').hidden = true; enterRoom(); connectToRoom(); });
+  $('closeCreatedBtn').addEventListener('click', () => { $('createdModal').hidden = true; enterRoom(); connectToRoom(); });
+  $('leaveBtn').addEventListener('click', () => { if(confirm('Sair da sala?')) leaveRoom(); });
+  $('reconnectBtn').addEventListener('click', () => {
+    toast('⟳ reconectando…');
+    try { if(room) room.leave(); } catch {}
+    room = null;
+    setTimeout(connectToRoom, 300);
+  });
+  $('roomCodeTop').addEventListener('click', () => { navigator.clipboard?.writeText(roomUrl()); toast('link copiado'); });
+
+  $('tabFontes').addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+    $('tabFontes').classList.add('active');
+    $('stageGrid').classList.remove('focus');
+  });
+  $('tabGrade').addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+    $('tabGrade').classList.add('active');
+    $('stageGrid').classList.remove('focus');
+  });
+  $('tabPalco').addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+    $('tabPalco').classList.add('active');
+    $('stageGrid').classList.add('focus');
+  });
+
+  $('stageFull').addEventListener('click', () => {
+    const el = $('stageGrid');
+    if(el.requestFullscreen) el.requestFullscreen();
+  });
+
+  $('resSelect').addEventListener('change', e => {
+    currentRes = parseInt(e.target.value, 10);
+    $('qRes').textContent = currentRes + 'p';
+    if(streamActive) applyQualityToSender();
+  });
+  $('fpsSelect').addEventListener('change', e => {
+    currentFps = parseInt(e.target.value, 10);
+    $('qFps').textContent = currentFps + 'fps';
+    if(streamActive) applyQualityToSender();
+  });
+  $('bitrateSelect').addEventListener('change', e => {
+    currentBitrate = e.target.value;
+    if(streamActive) applyQualityToSender();
+  });
+
+  $('goLiveBtn').addEventListener('click', () => {
+    if(streamActive){ stopCurrentStream(); }
+    else { toggleScreenShare(); }
+  });
+  $('camBtn').addEventListener('click', toggleCamera);
+  $('applyQualityBtn').addEventListener('click', () => {
+    applyQualityToSender();
+    toast('⚙ qualidade aplicada');
+  });
+
+  $('roomSend').addEventListener('click', sendRoomMsg);
+  $('roomInput').addEventListener('keydown', e => { if(e.key === 'Enter') sendRoomMsg(); });
+
+  const ptt = $('pttBtn');
+  ptt.addEventListener('mousedown', e => { e.preventDefault(); pttOn(); });
+  ptt.addEventListener('mouseup', () => pttOff());
+  ptt.addEventListener('mouseleave', () => pttOff());
+  ptt.addEventListener('touchstart', e => { e.preventDefault(); pttOn(); }, { passive:false });
+  ptt.addEventListener('touchend', e => { e.preventDefault(); pttOff(); }, { passive:false });
+  ptt.addEventListener('touchcancel', () => pttOff());
+
+  $('noiseBtn').addEventListener('click', toggleNoise);
+  $('micBtn').addEventListener('click', toggleMic);
+
+  window.addEventListener('keydown', e => {
+    const tag = document.activeElement && document.activeElement.tagName;
+    if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if(e.code === 'Space' && !e.repeat && !$('viewRoom').hidden){ e.preventDefault(); pttOn(); }
+    if($('viewRoom').hidden) return;
+    const k = e.key.toLowerCase();
+    if(k === 'm'){ e.preventDefault(); toggleMic(); }
+    else if(k === 'n'){ e.preventDefault(); toggleNoise(); }
+    else if(k === 't'){ e.preventDefault(); toggleScreenShare(); }
+    else if(k === 'c'){ e.preventDefault(); toggleCamera(); }
+  });
+  window.addEventListener('keyup', e => {
+    if(e.code === 'Space' && !$('viewRoom').hidden){ e.preventDefault(); pttOff(); }
+  });
+
+  window.addEventListener('beforeunload', () => { try { if(room) room.leave(); } catch {} });
+}
+boot();
+</script>
+</body>
+</html>
