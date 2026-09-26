@@ -354,7 +354,7 @@ input:focus,textarea:focus{border-color:var(--bright)}
 import {joinRoom} from 'https://esm.sh/trystero@0.25.4/nostr';
 
 const $ = id => document.getElementById(id);
-const APP_ID = 'dfir-analise-v12';
+const APP_ID = 'dfir-analise-final-v1'; // ID fixo para todos
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const K = { theme:'dfir-theme', name:'dfir-name' };
 const SELF = '__self__';
@@ -366,7 +366,19 @@ const BITRATES = {
 };
 
 // ============================================================
-// MUDANÇA CRÍTICA: Força o uso de TURN para garantir conexão
+// MUDANÇA CRÍTICA 1: Lista de relays Nostr confiáveis
+// ============================================================
+const NOSTR_RELAYS = [
+  'wss://relay.damus.io',
+  'wss://nos.lol',
+  'wss://relay.nostr.band',
+  'wss://nostr.mom',
+  'wss://relay.primal.net',
+  'wss://nostr.wine'
+];
+
+// ============================================================
+// MUDANÇA CRÍTICA 2: Força o uso de TURN para garantir conexão
 // em qualquer rede (NAT restritivo, firewall, 4G, etc.)
 // ============================================================
 const RTC_CONFIG = {
@@ -566,6 +578,7 @@ function connectToRoom(){
     room = joinRoom({
       appId: APP_ID,
       password: roomPass || undefined,
+      relayUrls: NOSTR_RELAYS,
       rtcConfig: RTC_CONFIG
     }, roomCode);
   } catch(e){
@@ -1102,12 +1115,11 @@ function boot(){
   const savedName = get(K.name, '');
   if(savedName){ $('createName').value = savedName; $('joinName').value = savedName; }
 
-  // --- AUTO JOIN VIA LINK (CORRIGIDO) ---
+  // --- AUTO JOIN VIA LINK ---
   const params = new URLSearchParams(location.search);
   const salaParam = params.get('sala');
   const passParam = params.get('pass') || '';
   if(salaParam && salaParam.length === 4){
-    // Aguarda um pouco para o DOM e a mídia iniciarem antes de conectar
     setTimeout(() => autoJoinFromLink(salaParam, passParam), 100);
   }
 
