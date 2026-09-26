@@ -372,7 +372,7 @@ html[data-theme="light"] .hero h1{color:var(--fg);text-shadow:2px 2px 0 var(--bo
  * DFIR Sala — Trystero torrent (mais estável que nostr pra matchmaking)
  * fixes: peers na mesma sala, ping real, mic/ptt, senha sem vazar, temas
  */
-import {joinRoom} from 'https://esm.sh/trystero@0.21.8/torrent';
+import {joinRoom} from 'https://esm.sh/trystero@0.25.0/torrent';
 
 const $ = id => document.getElementById(id);
 const APP_ID = 'dfir-sala-v3';
@@ -411,7 +411,7 @@ let lastBytesSent = 0, lastBytesTs = 0;
 const participants = new Map();
 const chatHistory = [];
 const peerConns = new Map();
-let sendProfile, getProfile, sendChat, getChat, sendKick, getKick;
+let profileAction, chatAction, kickAction;
 
 const THEMES = ['purple','dark','light'];
 const get = (k,d) => { try { return localStorage.getItem(k) ?? d } catch { return d } };
@@ -516,11 +516,13 @@ function updateMicUi(){
 function refreshPeerConns(){
   if(!room || typeof room.getPeers !== 'function') return;
   try {
-    const peers = room.getPeers();
-    for(const [id, pc] of Object.entries(peers || {})){
+    const peers = room.getPeers() || {};
+    const live = new Set(Object.keys(peers));
+    for(const id of peerConns.keys()) if(!live.has(id)) peerConns.delete(id);
+    for(const [id, pc] of Object.entries(peers)){
       if(pc && typeof pc.getSenders === 'function') peerConns.set(id, pc);
     }
-  } catch {}
+  } catch(e){ console.warn('[DFIR] getPeers', e); }
 }
 
 async function applyQualityToSender(){
@@ -628,25 +630,73 @@ function connectToRoom(){
     return;
   }
 
-  [sendProfile, getProfile] = room.makeAction('profile');
-  [sendChat, getChat] = room.makeAction('chat');
-  [sendKick, getKick] = room.makeAction('kick');
+  // Trystero >= 0.25 usa objetos de action, não [send, receive].
+  profileAction = room.makeAction('profile');
+  chatAction = room.makeAction('chat');
+  kickAction = room.makeAction('kick');
 
-  // assignment style (mais confiável em algumas builds)
+  profileAction.onMessage = (data, { peerId }) => {
+    if(!data || !peerId) return;
+    const ex = participants.get(peerId) || {};
+    participants.set(peerId, {
+      ...ex,
+      name: data.name || ex.name || '?',
+      isHost: !!data.isHost,
+      streaming: !!data.streaming,
+      source: data.source || null,
+      talking: !!data.talking
+    });
+    renderCallList();
+    updateCardFor(peerId);
+    updateConnCount();
+  };
+
+  chatAction.onMessage = (data, { peerId }) => {
+    if(!data) return;
+    const ex = participants.get(peerId) || {};
+    if(data.from && !ex.name){
+      ex.name = data.from;
+      participants.set(peerId, ex);
+      renderCallList();
+    }
+    addRoomMsg(peerId, { text:data.msg || '', at:data.at || Date.now() });
+  };
+
+  kickAction.onMessage = (data) => {
+    alert('Removido: ' + (data?.reason || ''));
+    leaveRoom();
+  };
+
   room.onPeerJoin = (peerId) => {
     console.log('[DFIR] peer join', peerId);
-    participants.set(peerId, { name:'…', volume:1 });
+    participants.set(peerId, { name:'…', volume:1, streaming:false });
     renderCallList();
     updateConnCount();
     refreshPeerConns();
-    // profile SEM senha
+
+    // Identidade: envia somente os dados públicos da interface.
     try {
-      sendProfile({ name: myName, isHost, streaming: streamActive, source: activeSource, talking: pttPressed || micOpen }, peerId);
-    } catch {}
+      profileAction.send({
+        name: myName,
+        isHost,
+        streaming: streamActive,
+        source: activeSource,
+        talking: pttPressed || micOpen
+      }, { target: peerId });
+    } catch(e){ console.warn('[DFIR] profile send', e); }
+
+    // ESSENCIAL: o peer que já estava na sala envia sua mídia para
+    // especificamente para o recém-chegado.
     if(myStream){
-      try { room.addStream(myStream, peerId); } catch(e){ console.warn(e); }
+      try {
+        room.addStream(myStream, { target: peerId, metadata: { kind:'call' } });
+      } catch(e){ console.warn('[DFIR] addStream target', e); }
     }
-    setTimeout(applyQualityToSender, 600);
+
+    setTimeout(() => {
+      refreshPeerConns();
+      applyQualityToSender();
+    }, 800);
     measurePing();
   };
 
@@ -661,55 +711,38 @@ function connectToRoom(){
     updateConnCount();
   };
 
-  room.onPeerStream = (stream, peerId) => {
+  room.onPeerStream = (stream, peerId, metadata) => {
+    console.log('[DFIR] stream received', peerId, metadata);
     attachStream(peerId, stream);
     refreshPeerConns();
+    const p = participants.get(peerId) || {};
+    p.streaming = stream.getVideoTracks().some(t => t.readyState !== 'ended' && t.enabled !== false);
+    participants.set(peerId, p);
+    updateCardFor(peerId);
+    renderCallList();
   };
 
-  getProfile((data, peerId) => {
-    if(!data) return;
-    const ex = participants.get(peerId) || {};
-    participants.set(peerId, {
-      ...ex,
-      name: data.name || ex.name || '?',
-      isHost: !!data.isHost,
-      streaming: !!data.streaming,
-      source: data.source || null,
-      talking: !!data.talking
-    });
-    if(isHost){
-      try {
-        sendProfile({ name: myName, isHost, streaming: streamActive, source: activeSource, talking: pttPressed || micOpen }, peerId);
-      } catch {}
-    }
-    renderCallList();
-    updateConnCount();
-  });
-
-  getChat((data) => {
-    if(!data) return;
-    addRoomMsg(data.from, { text: data.msg, at: data.at });
-  });
-
-  getKick((data) => {
-    alert('Removido: ' + (data?.reason || ''));
-    leaveRoom();
-  });
-
+  // Envia a stream atual para todos os peers já presentes.
   if(myStream){
-    try { room.addStream(myStream); } catch(e){ console.warn(e); }
+    try { room.addStream(myStream, { metadata: { kind:'call' } }); }
+    catch(e){ console.warn('[DFIR] addStream', e); }
   }
 
   setConn('warn', 'na sala');
   startStats();
   startPingLoop();
-  // se já tem peers (raro), sincroniza
+
   setTimeout(() => {
     refreshPeerConns();
     updateConnCount();
-  }, 1000);
+    // Garante que peers já conectados recebam a stream atual.
+    if(myStream){
+      for(const peerId of Object.keys(room.getPeers?.() || {})){
+        try { room.addStream(myStream, { target: peerId, metadata:{kind:'call'} }); } catch {}
+      }
+    }
+  }, 1200);
 }
-
 function updateConnCount(){
   const n = participants.size;
   if(n === 0) setConn('warn', 'só você');
@@ -1001,15 +1034,17 @@ function stopCurrentStream(){
 }
 
 function broadcastProfile(){
-  if(!room || !sendProfile) return;
+  if(!room || !profileAction) return;
   try {
-    sendProfile({
-      name: myName, isHost, streaming: streamActive,
-      source: activeSource, talking: pttPressed || micOpen
+    profileAction.send({
+      name: myName,
+      isHost,
+      streaming: streamActive,
+      source: activeSource,
+      talking: pttPressed || micOpen
     });
-  } catch {}
+  } catch(e){ console.warn('[DFIR] profile broadcast', e); }
 }
-
 function pttOn(){
   if(!audioTrack || pttPressed) return;
   pttPressed = true;
@@ -1093,9 +1128,11 @@ function sendRoomMsg(){
   $('roomInput').value = '';
   const at = Date.now();
   addRoomMsg(null, { text, at });
-  if(sendChat) try { sendChat({ from: myName, msg: text, at }); } catch {}
+  if(chatAction){
+    try { chatAction.send({ from: myName, msg: text, at }); }
+    catch(e){ console.warn('[DFIR] chat send', e); }
+  }
 }
-
 function showCreatedModal(){
   $('cId').textContent = roomCode;
   const link = buildRoomUrl();
