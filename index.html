@@ -178,6 +178,8 @@ input:focus,textarea:focus{border-color:var(--bright)}
 .cred b{font-family:var(--font-body);font-size:14px;flex:1;word-break:break-all;color:var(--neon)}
 .cred .lbl{color:var(--dim);font-family:var(--font-px);font-size:7px;text-transform:uppercase;min-width:80px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);border:2px solid var(--purple);box-shadow:3px 3px 0 var(--shadow);padding:10px 16px;font-family:var(--font-px);font-size:8px;color:var(--neon);z-index:95;max-width:80vw;text-align:center}
+.url-strip{font-family:var(--font-px);font-size:8px;color:var(--dim);background:var(--sink);border:2px solid var(--border);padding:6px 10px;margin:4px 12px 0;display:flex;align-items:center;gap:8px;letter-spacing:.04em}
+.url-strip b{color:var(--neon);font-weight:400;font-family:var(--font-body);font-size:11px;word-break:break-all;flex:1}
 @media (max-width:760px){
   .sidebar-call{width:44px}
   .footer-bar{height:auto;padding:6px;gap:6px}
@@ -232,7 +234,7 @@ input:focus,textarea:focus{border-color:var(--bright)}
   <div class="cards">
     <div class="card">
       <h2>➕ Criar sala</h2>
-      <p class="hint">Gera um código de 4 caracteres. Compartilha com a equipe.</p>
+      <p class="hint">Gera um código de 4 caracteres. A URL muda na hora pra compartilhar.</p>
       <input id="createName" placeholder="Seu nome" maxlength="24" autocomplete="off">
       <input id="createPass" placeholder="Senha (opcional)" maxlength="32" autocomplete="off">
       <button class="btn" id="createBtn">⚡ Criar sala</button>
@@ -251,6 +253,10 @@ input:focus,textarea:focus{border-color:var(--bright)}
 </main>
 
 <main id="viewRoom" hidden>
+  <div class="url-strip">
+    🔗 <b id="urlStrip">—</b>
+    <button class="btn ghost small" id="urlCopyBtn" style="flex:0 0 auto">copiar</button>
+  </div>
   <div class="room-shell">
     <aside class="sidebar-call" id="sidebarCall">
       <div class="call-header">
@@ -351,10 +357,11 @@ input:focus,textarea:focus{border-color:var(--bright)}
 <div class="toast" id="toastEl" hidden></div>
 
 <script type="module">
-import {joinRoom} from 'https://esm.sh/trystero@0.25.4/nostr';
+// Import principal do Trystero usando esm.sh que funcionou antes
+import {joinRoom} from 'https://esm.sh/trystero@0.21.6/nostr';
 
 const $ = id => document.getElementById(id);
-const APP_ID = 'dfir-analise-url-v1';
+const APP_ID = 'dfir-analise-url-final';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const K = { theme:'dfir-theme', name:'dfir-name' };
 const SELF = '__self__';
@@ -370,16 +377,13 @@ const NOSTR_RELAYS = [
   'wss://nos.lol',
   'wss://relay.nostr.band',
   'wss://nostr.mom',
-  'wss://relay.primal.net',
-  'wss://nostr.wine'
+  'wss://relay.primal.net'
 ];
 
-// STUN + TURN forçado para atravessar qualquer NAT
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
@@ -438,23 +442,53 @@ function toast(msg, ms=2400){
   toastTimer = setTimeout(() => { el.hidden = true; }, ms);
 }
 
-// URL helpers ------------------------------------------------
-function roomUrl(){
-  // URL canônica, com apenas ?sala=CODE (sem senha no link público)
-  return location.origin + location.pathname + '?sala=' + roomCode;
+// ============================================================
+// URL MANAGEMENT — atualiza a barra de endereço sem reload
+// ============================================================
+function buildRoomUrl(){
+  // URL canônica: SEMPRE com ?sala=XXXX
+  const base = location.origin + location.pathname;
+  return base + '?sala=' + encodeURIComponent(roomCode);
 }
 function setUrlRoom(code){
+  const url = location.origin + location.pathname + '?sala=' + encodeURIComponent(code);
+  console.log('[DFIR] setUrlRoom →', url);
   try {
-    const url = location.origin + location.pathname + '?sala=' + code;
     history.replaceState({ sala: code }, '', url);
-  } catch(e){ console.warn('replaceState:', e); }
+  } catch(e){
+    console.warn('[DFIR] replaceState falhou, tentando hash fallback:', e);
+    location.hash = '#sala=' + code;
+  }
+  // Atualiza também o display interno da URL
+  updateUrlStrip();
 }
 function clearUrl(){
+  const url = location.origin + location.pathname;
+  console.log('[DFIR] clearUrl →', url);
   try {
-    history.replaceState({}, '', location.origin + location.pathname);
-  } catch(e){ console.warn('replaceState:', e); }
+    history.replaceState({}, '', url);
+  } catch(e){
+    location.hash = '';
+  }
 }
-// ------------------------------------------------------------
+function updateUrlStrip(){
+  const el = $('urlStrip');
+  if(el) el.textContent = location.href;
+}
+function readUrlParams(){
+  // Aceita tanto ?sala=XXXX quanto #sala=XXXX
+  const search = new URLSearchParams(location.search);
+  let code = search.get('sala');
+  let pass = search.get('pass') || '';
+  if(!code && location.hash){
+    const h = location.hash.replace(/^#/,'');
+    const hp = new URLSearchParams(h);
+    code = hp.get('sala') || null;
+    pass = hp.get('pass') || pass;
+  }
+  return { code, pass };
+}
+// ============================================================
 
 function escapeHtml(s){ return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
 
@@ -537,7 +571,9 @@ function captureConstraints(){
   return { width:{ideal: h === 480 ? 854 : h === 720 ? 1280 : 1920}, height:{ideal:h}, frameRate:{ideal:currentFps, max:currentFps} };
 }
 
-// ---------- criar / entrar ----------
+// ============================================================
+// CRIAR / ENTRAR — URL muda imediatamente
+// ============================================================
 async function startHost(){
   myName = $('createName').value.trim();
   roomPass = $('createPass').value.trim();
@@ -545,7 +581,7 @@ async function startHost(){
   $('createErr').textContent = '';
   put(K.name, myName);
   roomCode = genCode(); isHost = true;
-  // ATUALIZA URL IMEDIATAMENTE
+  // ⚡ Atualiza URL IMEDIATAMENTE
   setUrlRoom(roomCode);
   await initMedia();
   showCreatedModal();
@@ -569,7 +605,7 @@ async function startJoin(){
 async function autoJoinFromLink(code, pass) {
   myName = get(K.name, '');
   if (!myName || myName.length < 2) {
-    const n = prompt('Seu nome para entrar na sala:');
+    const n = prompt('Seu nome para entrar na sala ' + code + ':');
     if (!n || n.trim().length < 2) { alert('Nome inválido.'); clearUrl(); return; }
     myName = n.trim();
     put(K.name, myName);
@@ -577,13 +613,11 @@ async function autoJoinFromLink(code, pass) {
   roomCode = code.toUpperCase();
   roomPass = pass || '';
   isHost = false;
-  setUrlRoom(roomCode);
   await initMedia();
   enterRoom();
   connectToRoom();
 }
 
-// ---------- conexão ----------
 function connectToRoom(){
   if(room){ try{ room.leave(); }catch{} room = null; }
   setConn('warn', 'conectando…');
@@ -718,6 +752,7 @@ function enterRoom(){
   }, 30000);
   $('roomTimer').textContent = '0min';
   $('qualityOverlay').hidden = false;
+  updateUrlStrip();
   renderCallList();
   updateStageEmpty();
   addRoomMsg(null, { sys:true, text: 'Você entrou na sala ' + roomCode });
@@ -728,9 +763,8 @@ function leaveRoom(){
   if(myStream) myStream.getTracks().forEach(t => t.stop());
   if(timerInterval) clearInterval(timerInterval);
   if(statsInterval) clearInterval(statsInterval);
-  // LIMPA URL E VOLTA PARA A HOME
   clearUrl();
-  location.href = location.pathname;
+  location.reload();
 }
 
 function renderCallList(){
@@ -1001,7 +1035,7 @@ function sendRoomMsg(){
 
 function showCreatedModal(){
   $('cId').textContent = roomCode;
-  const link = roomUrl();
+  const link = buildRoomUrl();
   $('cLink').textContent = link;
   if(roomPass){ $('cPassRow').hidden = false; $('cPass').textContent = roomPass; }
   else $('cPassRow').hidden = true;
@@ -1123,7 +1157,11 @@ window.addEventListener('resize', () => {
   }
 });
 
+// ============================================================
+// BOOT
+// ============================================================
 function boot(){
+  console.log('[DFIR] boot. location:', location.href);
   initResizers();
   applyTheme(curTheme());
   document.querySelectorAll('[data-theme-btn]').forEach(b => b.addEventListener('click', () => setTheme(b.dataset.themeBtn)));
@@ -1131,13 +1169,11 @@ function boot(){
   const savedName = get(K.name, '');
   if(savedName){ $('createName').value = savedName; $('joinName').value = savedName; }
 
-  // --- AUTO JOIN VIA LINK (a URL tem ?sala=XXXX) ---
-  const params = new URLSearchParams(location.search);
-  const salaParam = params.get('sala');
-  const passParam = params.get('pass') || '';
-  if(salaParam && salaParam.length === 4){
-    // Deixa a UI carregar antes de auto-entrar
-    setTimeout(() => autoJoinFromLink(salaParam, passParam), 100);
+  // --- AUTO JOIN VIA LINK ---
+  const { code, pass } = readUrlParams();
+  console.log('[DFIR] url params →', { code, pass });
+  if(code && code.length === 4){
+    setTimeout(() => autoJoinFromLink(code, pass), 150);
   }
 
   $('brandHome').addEventListener('click', () => { if(!$('viewRoom').hidden) leaveRoom(); });
@@ -1154,6 +1190,10 @@ function boot(){
       btn.textContent = 'copiado!'; setTimeout(() => btn.textContent = 'copiar', 1200);
     });
   });
+  $('urlCopyBtn').addEventListener('click', () => {
+    navigator.clipboard?.writeText(location.href);
+    toast('link copiado');
+  });
   $('enterRoomBtn').addEventListener('click', () => { $('createdModal').hidden = true; enterRoom(); connectToRoom(); });
   $('closeCreatedBtn').addEventListener('click', () => { $('createdModal').hidden = true; enterRoom(); connectToRoom(); });
   $('leaveBtn').addEventListener('click', () => { if(confirm('Sair da sala?')) leaveRoom(); });
@@ -1163,7 +1203,7 @@ function boot(){
     room = null;
     setTimeout(connectToRoom, 300);
   });
-  $('roomCodeTop').addEventListener('click', () => { navigator.clipboard?.writeText(roomUrl()); toast('link copiado'); });
+  $('roomCodeTop').addEventListener('click', () => { navigator.clipboard?.writeText(buildRoomUrl()); toast('link copiado'); });
 
   $('tabFontes').addEventListener('click', () => {
     document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
